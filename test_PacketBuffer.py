@@ -1,12 +1,5 @@
 import unittest
-
-import random
-import select
-import socket
-import sys
-import time
-
-from packet_buffer import PacketBuffer, ChecksumError
+from xbradio import PacketBuffer, ChecksumError
 
 class TimedOutError(Exception):
     pass
@@ -172,13 +165,25 @@ class PacketBufferTestCase(unittest.TestCase):
                          len(b'\x00\x00\x00'))
         self.assertEqual(self.pb.packet_count, 2)
 
+    @unittest.skip("Demonstrating the @unittest.skip decorator")
+    def testSkipThisOne(self):
+        pass
 
 
-
-
+def run_unittest(*classes):
+    suite = unittest.TestSuite()
+    for c in classes:
+        suite.addTest(c)
+    runner = unittest.TestRunner()
+    result = runner.run(suite)
+    msg = "Ran %d tests" % result.testsRun
+    if result.skippedNum > 0:
+        msg += " (%d skipped)" % result.skippedNum
+    print(msg)
 
 def main():
-    unittest.main()
+    test_classes = [PacketBufferTestCase]
+    run_unittest(*test_classes)
 
 if __name__ == '__main__':
     main()

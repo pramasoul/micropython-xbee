@@ -3,6 +3,10 @@
 from xbradio import XBRadio
 from pyb import SPI, Pin, delay
 
+def test_PacketBuffer():
+    import test_PacketBuffer
+    test_PacketBuffer.main()
+
 def test_as(xb):
     #xb.verbose = True
     #g = xb.get_and_process_available_packets
