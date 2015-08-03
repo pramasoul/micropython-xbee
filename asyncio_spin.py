@@ -142,23 +142,34 @@ def wait(coro_list, loop=_def_event_loop):
     return w
 
 
-import pyb
-import gc
-sleepy_led = pyb.LED(2)
-sleepy_led.on()
-sleep_count = 0
+import sys
 
-def sleep(secs):
-    global sleep_count
-    millis = round(secs * 1000)
-    t = pyb.millis()
-    log.debug("Started sleep at: %s, targetting: %s", t, t + millis)
-    while pyb.elapsed_millis(t) < millis:
-        #time.sleep(0.01)
-        #gc.collect()
-        sleep_count += 1
-        if sleep_count > 1000:
-            sleep_count = 0
-            sleepy_led.toggle()
-        yield
-    log.debug("Finished sleeping %ss", secs)
+if sys.platform != 'pyboard':
+    def sleep(secs):
+        t = time.time()
+        log.debug("Started sleep at: %s, targetting: %s", t, t + secs)
+        while time.time() < t + secs:
+            time.sleep(0.01)
+            yield
+        log.debug("Finished sleeping %ss", secs)
+else:
+    import pyb
+    #import gc
+    sleepy_led = pyb.LED(2)
+    sleepy_led.on()
+    sleep_count = 0
+
+    def sleep(secs):
+        global sleep_count
+        millis = round(secs * 1000)
+        t = pyb.millis()
+        log.debug("Started sleep at: %s, targeting: %s", t, t + millis)
+        while pyb.elapsed_millis(t) < millis:
+            #time.sleep(0.01)
+            #gc.collect()
+            sleep_count += 1
+            if sleep_count > 1000:
+                sleep_count = 0
+                sleepy_led.toggle()
+            yield
+        log.debug("Finished sleeping %ss", secs)
