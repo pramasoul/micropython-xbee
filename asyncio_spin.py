@@ -109,11 +109,12 @@ def coroutine(f):
     return f
 
 
-def async(coro):
+def ensure_future(coro):
     if isinstance(coro, Future):
         return coro
     return Task(coro)
 
+async = ensure_future           # "Deprecated since version 3.4.4"
 
 class _Wait(Future):
 
@@ -145,6 +146,7 @@ def wait(coro_list, loop=_def_event_loop):
 import sys
 
 if sys.platform != 'pyboard':
+
     def sleep(secs):
         t = time.time()
         log.debug("Started sleep at: %s, targetting: %s", t, t + secs)
@@ -152,7 +154,9 @@ if sys.platform != 'pyboard':
             time.sleep(0.01)
             yield
         log.debug("Finished sleeping %ss", secs)
+
 else:
+
     import pyb
     #import gc
     sleepy_led = pyb.LED(2)
