@@ -81,6 +81,15 @@ class Future:
         for f in self.cbs:
             f(self)
 
+    def done(self):
+        return self.res is not _sentinel
+
+    def __iter__(self):
+        if self.res is _sentinel:
+            yield self
+        assert self.done(), "yield from wasn't used with future"
+        return self.result()
+
 
 class Task(Future):
 
@@ -91,13 +100,31 @@ class Task(Future):
         # upstream asyncio forces task to be scheduled on instantiation
         self.loop.call_soon(self)
 
+    # like python3.4 asyncio.Task._step
     def __call__(self):
         try:
-            next(self.c)
-            self.loop.call_soon(self)
+            result = next(self.c)
         except StopIteration as e:
             log.debug("Coro finished: %s", self.c)
-            self.set_result(None)
+            self.set_result(e.value)
+        else:
+            if isinstance(result, Future):
+                # Yielded Future must come from Future.__iter__().
+                result.add_done_callback(self._wakeup)
+            else:
+                self.loop.call_soon(self)
+
+    def _wakeup(self, future):
+        try:
+            value = future.result()
+        except Exception as exc:
+            raise NotImplementedError("_wakeup() doesn't handle exceptions yet")
+        else:
+            try:
+                self.c.send(value)
+            except StopIteration:
+                self.set_result(value)
+        self = None  # Needed to break cycles when an exception occurs.
 
 
 def get_event_loop():
@@ -141,6 +168,10 @@ def wait(coro_list, loop=_def_event_loop):
         t.add_done_callback(lambda val: w._done())
 
     return w
+
+
+def wait_for(fut, *args, loop=_def_event_loop):
+    return (yield from fut)
 
 
 import sys
