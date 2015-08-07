@@ -57,6 +57,15 @@ class EventLoop:
 
 _def_event_loop = EventLoop()
 
+def new_event_loop():
+    return EventLoop()
+
+def get_event_loop():
+    return _def_event_loop
+
+def set_event_loop(loop):
+    _def_event_loop = loop
+
 
 class Future:
 
@@ -127,9 +136,6 @@ class Task(Future):
         self = None  # Needed to break cycles when an exception occurs.
 
 
-def get_event_loop():
-    return _def_event_loop
-
 
 # Decorator
 def coroutine(f):
@@ -178,7 +184,7 @@ import sys
 
 if sys.platform != 'pyboard':
 
-    def sleep(secs):
+    def sleep(secs, loop=_def_event_loop):
         t = time.time()
         log.debug("Started sleep at: %s, targetting: %s", t, t + secs)
         while time.time() < t + secs:
@@ -194,7 +200,7 @@ else:
     sleepy_led.on()
     sleep_count = 0
 
-    def sleep(secs):
+    def sleep(secs, loop=_def_event_loop):
         global sleep_count
         millis = round(secs * 1000)
         t = pyb.millis()
