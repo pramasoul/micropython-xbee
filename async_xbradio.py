@@ -164,7 +164,7 @@ class XBRHAL:
         # reset and force the XBee into SPI mode
         self.nRESET.low()
         self.DOUT.low()
-        yield from asyncio.sleep(0.01)
+        yield from asyncio.sleep(0.01) # IIRC noticably less than 10ms fails
         self.nRESET.high()
         #delay(100)              # Without nATTN watch loop, 85ms is unreliable. 100ms is ok.
         #t0 = millis()
@@ -175,27 +175,28 @@ class XBRHAL:
         self.DOUT.high()
         
     @asyncio.coroutine
-    def get_packet(self, timeout=100):
+    def get_packet(self, timeout=None):
         # Get a packet from the radio
         # or raise PacketWaitTimeout if none available in specified time
 
         @asyncio.coroutine
-        def get_packet_by_reading():
+        def get_packet_by_reading(limit=None):
             # Helper to get a packet from the radio itself
             # Note it will spin forever if the radio has no packet
             self.nSSEL.low()
             gotten = 0
-            while len(self.pb) == 0 and gotten < 300: # feed the packet buffer until packet(s) available
+            while len(self.pb) == 0 and \
+                  (limit is None or gotten < limit): # feed the packet buffer until packet(s) available
                 self.pb.include_bytes(self.spi.recv(self.rx_hunk_len))
                 gotten += self.rx_hunk_len
-                yield #from asyncio.sleep(0)
+                yield
                 if self.verbose:
                     print("get_packet_by_reading(): State %d, gotten %d, marking bytes %d, total marking %d" %
                           (self.pb.state,
                            gotten,
                            self.pb.marking_bytes_count,
                            self.pb.total_marking_bytes_count))
-            if gotten >= 300:
+            if limit and gotten >= limit:
                 raise PacketOverrunError("got %d bytes and don't have a packet yet" % gotten)
             rv = self.pb.dequeue_one()
             #print("get_packet_by_reading() returning %r" % rv)
@@ -206,18 +207,18 @@ class XBRHAL:
             return self.pb.dequeue_one()
         # else if part way into a packet, get the rest
         if self.pb.in_a_packet():
-            return (yield from get_packet_by_reading())
+            return (yield from get_packet_by_reading(300))
         # else see if one turns up within the timeout
         if self.nATTN.value():  # No data available from radio yet
             # wait up to the timeout value
             t0 = millis()
             while self.nATTN.value():
                 yield
-                if elapsed_millis(t0) > timeout:
+                if timeout is not None and elapsed_millis(t0) > timeout:
                     raise PacketWaitTimeout("%dms" % timeout)
             # Here nATTN is in asserted state
-        assert not self.nATTN.value(), 'expected nATTN to be low'
-        return (yield from get_packet_by_reading())
+        assert not self.nATTN.value(), 'expected nATTN to be asserted (low)'
+        return (yield from get_packet_by_reading(300))
 
 
     @asyncio.coroutine
@@ -225,7 +226,7 @@ class XBRHAL:
         # Flush out all readily-available received radio packets
         while True:
             try:
-                b = yield from self.get_packet(timeout=1)
+                b = yield from self.get_packet(timeout=0)
             except PacketWaitTimeout:
                 break
 

@@ -4,8 +4,11 @@ import asyncio
 import unittest
 #from ubinascii import hexlify
 
-from async_xbradio import XBRadio
-from pyb import SPI, Pin, info
+from async_xbradio import XBRadio, \
+    PacketOverrunError, PacketWaitTimeout
+
+
+from pyb import SPI, Pin, info, millis, elapsed_millis
 
 
 def async_test(f):
@@ -83,6 +86,18 @@ class RadioTestCase(unittest.TestCase):
         yield from xb.start()
         at = xb.do_AT_cmd_and_process_response
         yield from at('ER')
+
+    @async_test
+    def testGetPacketTimeout(self):
+        xb = self.xb
+        yield from xb.start()
+        with self.assertRaises(PacketWaitTimeout):
+            yield from xb.xcvr.get_packet(0)
+        t0 = millis()
+        with self.assertRaises(PacketWaitTimeout):
+            yield from xb.xcvr.get_packet(34)
+        self.assertIn(elapsed_millis(t0), [34,35])
+
 
     @async_test
     def testSendToSelf(self):
