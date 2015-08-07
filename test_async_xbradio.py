@@ -4,8 +4,8 @@ import asyncio
 import unittest
 #from ubinascii import hexlify
 
-from cxbrc import XBRadio
-from pyb import SPI, Pin, delay
+from async_xbradio import XBRadio
+from pyb import SPI, Pin, info
 
 
 def async_test(f):
@@ -95,21 +95,19 @@ class RadioTestCase(unittest.TestCase):
         yield from xb.tx('bar', xb.address)
         yield from asyncio.sleep(0.1)
         self.assertEqual((yield from xb.rx_available()), 2)
-        return
-
-        a, d = xb.rx()
+        a, d = yield from xb.rx()
         self.assertEqual(a, xb.address)
         self.assertEqual(d, b'foo')
-        self.assertEqual(xb.rx_available(), 1)
-        a, d = xb.rx()
+        self.assertEqual((yield from xb.rx_available()), 1)
+        a, d = yield from xb.rx()
         self.assertEqual(a, xb.address)
         self.assertEqual(d, b'bar')
-        self.assertEqual(xb.rx_available(), 0)
+        self.assertEqual((yield from xb.rx_available()), 0)
 
-    #@unittest.skip('x')
+    @unittest.skip('takes 3 seconds')
     @async_test
     def testSendToNonExistentAddress(self):
-        print("test takes 3 seconds: ", end='')
+        print("this takes 3 seconds: ", end='')
         xb = self.xb
         self.assertEqual((yield from xb.rx_available()), 0)
         yield from xb.tx('foo', 'thisisanaddress!')

@@ -296,7 +296,7 @@ class XBRadio:
 
     @asyncio.coroutine
     def reset(self):
-        self.xcvr.hard_reset()
+        yield from self.xcvr.hard_reset()
 
     @asyncio.coroutine
     def get_and_process_available_packets(self, timeout=100):
@@ -414,12 +414,15 @@ class XBRadio:
         #print("tx %s ..." % p[:16]) # DEBUG
         yield from self.xcvr.send_packet(p)
 
+    @asyncio.coroutine
     def rx(self, timeout=1):
         # return next available (address, data) received
+        #print("rx(timeout=%d): len(received_data_packets) = %d"
+        #      % (timeout, len(self.received_data_packets))) # DEBUG
         try:
             return self.received_data_packets.pop()
         except IndexError:
-            self.get_and_process_available_packets(timeout=timeout)
+            yield from self.get_and_process_available_packets(timeout=timeout)
             return self.received_data_packets.pop()
 
     @asyncio.coroutine
