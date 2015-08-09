@@ -8,7 +8,7 @@ from pyb import millis, elapsed_millis
 class RadioException(Exception):
     pass
 
-class PacketWaitTimeout(RadioException):
+class FrameWaitTimeout(RadioException):
     pass
 
 class SpiCommError(RadioException):
@@ -175,12 +175,12 @@ class XBRHAL:
         self.DOUT.high()
         
     @asyncio.coroutine
-    def get_packet(self, timeout=None):
-        # Get a packet from the radio
-        # or raise PacketWaitTimeout if none available in specified time
+    def get_frame(self, timeout=None):
+        # Get a frame from the radio
+        # or raise FrameWaitTimeout if none available in specified time
 
         @asyncio.coroutine
-        def get_packet_by_reading(limit=None):
+        def get_frame_by_reading(limit=None):
             # Helper to get a packet from the radio itself
             # Note it will spin forever if the radio has no packet
             self.nSSEL.low()
@@ -191,7 +191,7 @@ class XBRHAL:
                 gotten += self.rx_hunk_len
                 yield
                 if self.verbose:
-                    print("get_packet_by_reading(): State %d, gotten %d, marking bytes %d, total marking %d" %
+                    print("get_frame_by_reading(): State %d, gotten %d, marking bytes %d, total marking %d" %
                           (self.pb.state,
                            gotten,
                            self.pb.marking_bytes_count,
@@ -199,7 +199,7 @@ class XBRHAL:
             if limit and gotten >= limit:
                 raise PacketOverrunError("got %d bytes and don't have a packet yet" % gotten)
             rv = self.pb.dequeue_one()
-            #print("get_packet_by_reading() returning %r" % rv)
+            #print("get_frame_by_reading() returning %r" % rv)
             return rv
 
         # From the packet buffer if available
@@ -207,7 +207,7 @@ class XBRHAL:
             return self.pb.dequeue_one()
         # else if part way into a packet, get the rest
         if self.pb.in_a_packet():
-            return (yield from get_packet_by_reading(300))
+            return (yield from get_frame_by_reading(300))
         # else see if one turns up within the timeout
         if self.nATTN.value():  # No data available from radio yet
             # wait up to the timeout value
@@ -215,10 +215,10 @@ class XBRHAL:
             while self.nATTN.value():
                 yield
                 if timeout is not None and elapsed_millis(t0) > timeout:
-                    raise PacketWaitTimeout("%dms" % timeout)
+                    raise FrameWaitTimeout("%dms" % timeout)
             # Here nATTN is in asserted state
         assert not self.nATTN.value(), 'expected nATTN to be asserted (low)'
-        return (yield from get_packet_by_reading(300))
+        return (yield from get_frame_by_reading(300))
 
 
     @asyncio.coroutine
@@ -226,8 +226,8 @@ class XBRHAL:
         # Flush out all readily-available received radio packets
         while True:
             try:
-                b = yield from self.get_packet(timeout=0)
-            except PacketWaitTimeout:
+                b = yield from self.get_frame(timeout=0)
+            except FrameWaitTimeout:
                 break
 
     @asyncio.coroutine
@@ -293,7 +293,7 @@ class XBRadio:
     def start(self):
         yield from self.xcvr.hard_reset()
         yield from self.request_MAC_from_radio()
-        yield from self.get_and_process_available_packets()
+        yield from self.get_and_process_available_frames()
         self.started = True
 
     @asyncio.coroutine
@@ -301,12 +301,12 @@ class XBRadio:
         yield from self.xcvr.hard_reset()
 
     @asyncio.coroutine
-    def get_and_process_available_packets(self, timeout=100):
+    def get_and_process_available_frames(self, timeout=100):
         # Consume and process packets from radio
         while True:
             try:
-                b = yield from self.xcvr.get_packet(timeout=timeout)
-            except PacketWaitTimeout:
+                b = yield from self.xcvr.get_frame(timeout=timeout)
+            except FrameWaitTimeout:
                 break
             else:
                 if self.verbose:
@@ -391,7 +391,7 @@ class XBRadio:
     @asyncio.coroutine
     def do_AT_cmd_and_process_response(self, cmd, param=None):
         yield from self.send_AT_cmd(cmd, param)
-        yield from self.get_and_process_available_packets(timeout=1) # FIXME: is 1ms long enough?
+        yield from self.get_and_process_available_frames(timeout=1) # FIXME: is 1ms long enough?
 
     @asyncio.coroutine
     def request_MAC_from_radio(self):
@@ -424,12 +424,19 @@ class XBRadio:
         try:
             return self.received_data_packets.pop()
         except IndexError:
-            yield from self.get_and_process_available_packets(timeout=timeout)
+            yield from self.get_and_process_available_frames(timeout=timeout)
             return self.received_data_packets.pop()
 
     @asyncio.coroutine
+    def will_rx(self):
+        x = self.xcvr
+        rv = None
+        while not rv:
+            b = yield from x.get_frame()
+            
+    @asyncio.coroutine
     def rx_available(self):
-        yield from self.get_and_process_available_packets(timeout=1)
+        yield from self.get_and_process_available_frames(timeout=1)
         return len(self.received_data_packets)
 
 

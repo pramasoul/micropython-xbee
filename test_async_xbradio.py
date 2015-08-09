@@ -7,7 +7,7 @@ import unittest
 #from ubinascii import hexlify
 
 from async_xbradio import XBRadio, \
-    PacketOverrunError, PacketWaitTimeout
+    PacketOverrunError, FrameWaitTimeout
 
 
 from pyb import SPI, Pin, info, millis, elapsed_millis
@@ -91,11 +91,11 @@ class RadioTestCase(unittest.TestCase):
     def testGetPacketTimeout(self):
         xb = self.xb
         yield from xb.start()
-        with self.assertRaises(PacketWaitTimeout):
-            yield from xb.xcvr.get_packet(0)
+        with self.assertRaises(FrameWaitTimeout):
+            yield from xb.xcvr.get_frame(0)
         t0 = millis()
-        with self.assertRaises(PacketWaitTimeout):
-            yield from xb.xcvr.get_packet(34)
+        with self.assertRaises(FrameWaitTimeout):
+            yield from xb.xcvr.get_frame(34)
         self.assertIn(elapsed_millis(t0), [34,35])
 
 
@@ -141,7 +141,7 @@ class RadioTestCase(unittest.TestCase):
         self.loop.run_until_complete(asyncio.wait(tasks, loop=self.loop))
 
 
-    def test_get_packet(self):
+    def test_get_frame(self):
         #logging.basicConfig(logging.DEBUG)
         #self.xb.verbose = True
         self.loop.run_until_complete(asyncio.Task(self.xb.start()))
@@ -151,9 +151,9 @@ class RadioTestCase(unittest.TestCase):
         @asyncio.coroutine
         def getv():
             yield from asyncio.sleep(0.01, loop=self.loop)
-            t = yield from self.xb.xcvr.get_packet()
+            t = yield from self.xb.xcvr.get_frame()
             self.assertEqual(t[-5:], b'\xff\xfe\x00\x00\x00') # The TX status
-            self.v = yield from self.xb.xcvr.get_packet()     # The received packet
+            self.v = yield from self.xb.xcvr.get_frame()     # The received packet
 
         @asyncio.coroutine
         def test():
