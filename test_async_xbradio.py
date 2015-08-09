@@ -24,9 +24,7 @@ class CoroTestCase(unittest.TestCase):
 
     def setUp(self):
         self.loop = asyncio.new_event_loop()
-        #self.loop = asyncio.get_event_loop()
-        #asyncio.set_event_loop(None)
-        asyncio.set_event_loop(self.loop)
+        asyncio.set_event_loop(None)
         
     def tearDown(self):
         pass
@@ -55,7 +53,7 @@ class RadioTestCase(unittest.TestCase):
 
     @async_test
     def testSleep(self):
-        yield from asyncio.sleep(0.01)
+        yield from asyncio.sleep(0.01, loop=self.loop)
 
     @async_test
     def testStartRadio(self):
@@ -105,10 +103,10 @@ class RadioTestCase(unittest.TestCase):
         yield from xb.start()
         self.assertEqual((yield from xb.rx_available()), 0)
         yield from xb.tx('foo', xb.address)
-        yield from asyncio.sleep(0.005)
+        yield from asyncio.sleep(0.005, loop=self.loop)
         self.assertEqual((yield from xb.rx_available()), 1)
         yield from xb.tx('bar', xb.address)
-        yield from asyncio.sleep(0.1)
+        yield from asyncio.sleep(0.1, loop=self.loop)
         self.assertEqual((yield from xb.rx_available()), 2)
         a, d = yield from xb.rx()
         self.assertEqual(a, xb.address)
@@ -119,14 +117,14 @@ class RadioTestCase(unittest.TestCase):
         self.assertEqual(d, b'bar')
         self.assertEqual((yield from xb.rx_available()), 0)
 
-    @unittest.skip('takes 3 seconds')
+    #@unittest.skip('takes 3 seconds')
     @async_test
     def testSendToNonExistentAddress(self):
         print("this takes 3 seconds: ", end='')
         xb = self.xb
         self.assertEqual((yield from xb.rx_available()), 0)
         yield from xb.tx('foo', 'thisisanaddress!')
-        yield from asyncio.sleep(3)
+        yield from asyncio.sleep(3, loop=self.loop)
         self.assertEqual((yield from xb.rx_available()), 0)
 
 
