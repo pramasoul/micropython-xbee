@@ -7,7 +7,7 @@ import unittest
 #from ubinascii import hexlify
 
 from async_xbradio import XBRadio, \
-    PacketOverrunError, FrameWaitTimeout
+    FrameOverrunError, FrameWaitTimeout
 
 
 from pyb import SPI, Pin, info, millis, elapsed_millis
@@ -88,7 +88,7 @@ class RadioTestCase(unittest.TestCase):
         yield from at('ER')
 
     @async_test
-    def testGetPacketTimeout(self):
+    def testGetFrameTimeout(self):
         xb = self.xb
         yield from xb.start()
         with self.assertRaises(FrameWaitTimeout):
@@ -96,7 +96,7 @@ class RadioTestCase(unittest.TestCase):
         t0 = millis()
         with self.assertRaises(FrameWaitTimeout):
             yield from xb.xcvr.get_frame(34)
-        self.assertIn(elapsed_millis(t0), [34,35])
+        self.assertTrue(34 <= elapsed_millis(t0) < 36)
 
 
     @async_test

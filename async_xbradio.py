@@ -14,7 +14,7 @@ class FrameWaitTimeout(RadioException):
 class SpiCommError(RadioException):
     pass
 
-class PacketOverrunError(RadioException):
+class FrameOverrunError(RadioException):
     pass
 
 #class ShortPacket(RadioException):
@@ -34,7 +34,7 @@ def big_endian_int(b):
         rv = (rv << 8) + int(v)
     return rv
 
-class PacketBuffer(object):
+class FrameBuffer(object):
     def __init__(self):
         self.packets = []
         self.reset_parse()
@@ -146,7 +146,7 @@ class XBRHAL:
         self.nATTN = nATTN
 
         # helper
-        self.pb = PacketBuffer()
+        self.pb = FrameBuffer()
 
         # init tuneable parameters
         self.rx_hunk_len = 16
@@ -157,7 +157,7 @@ class XBRHAL:
     @asyncio.coroutine
     def hard_reset(self):
         yield from self.force_SPI()
-        self.pb = PacketBuffer() # lose the old one
+        self.pb = FrameBuffer() # lose the old one
 
     @asyncio.coroutine
     def force_SPI(self):
@@ -197,7 +197,7 @@ class XBRHAL:
                            self.pb.marking_bytes_count,
                            self.pb.total_marking_bytes_count))
             if limit and gotten >= limit:
-                raise PacketOverrunError("got %d bytes and don't have a packet yet" % gotten)
+                raise FrameOverrunError("got %d bytes and don't have a frame yet" % gotten)
             rv = self.pb.dequeue_one()
             #print("get_frame_by_reading() returning %r" % rv)
             return rv
@@ -223,7 +223,7 @@ class XBRHAL:
 
     @asyncio.coroutine
     def flush(self):
-        # Flush out all readily-available received radio packets
+        # Flush out all readily-available frames from the radio
         while True:
             try:
                 b = yield from self.get_frame(timeout=0)
@@ -231,10 +231,10 @@ class XBRHAL:
                 break
 
     @asyncio.coroutine
-    def send_packet(self, buf):
-        # Wrap a packet in an API frame and send to the radio
+    def send_frame(self, buf):
+        # Wrap buffer contents in an API frame and send to the radio
         # Radio may be sending a frame to us at the same time
-        #print("send_packet(%r)" % buf)
+        #print("send_frame(%r)" % buf)
         header = bytearray(3)
         hv = memoryview(header)
         hv[0] = ord('~')
@@ -386,7 +386,7 @@ class XBRadio:
                 else:
                     param = bytes(param)
             p += param
-        yield from self.xcvr.send_packet(p)
+        yield from self.xcvr.send_frame(p)
 
     @asyncio.coroutine
     def do_AT_cmd_and_process_response(self, cmd, param=None):
@@ -414,7 +414,7 @@ class XBRadio:
                     options])
         p += data
         #print("tx %s ..." % p[:16]) # DEBUG
-        yield from self.xcvr.send_packet(p)
+        yield from self.xcvr.send_frame(p)
 
     @asyncio.coroutine
     def rx(self, timeout=1):
