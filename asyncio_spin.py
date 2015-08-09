@@ -31,14 +31,20 @@ class EventLoop:
         Task(_delayed(c, args, delay))
 
     def run_forever(self):
+        leds_off()
         while self.q:
+            toggle_yellow()
             c = self.q.pop(0)
             try:
                 c[0](*c[1])
             except LoopStop:
+                yellow_off()
                 return
+        #raise RuntimeError("run_forever() ran out of queue!") # DEBUG
         # I mean, forever
         while True:
+            # Make visible that we've fallen into this pit
+            toggle_blue()
             time.sleep(1)
 
     def stop(self):
@@ -49,6 +55,7 @@ class EventLoop:
     def run_until_complete(self, coro):
         t = async(coro)
         t.add_done_callback(lambda a: self.stop())
+        #print(t)                # DEBUG
         self.run_forever()
 
     def close(self):
@@ -99,6 +106,22 @@ class Future:
         assert self.done(), "yield from wasn't used with future"
         return self.result()
 
+    def __repr__(self):
+        res = self.__class__.__name__
+        state =  self.res == _sentinel and 'PENDING' or 'FINISHED'
+        if self.cbs:
+            size = len(self.cbs)
+            if size > 2:
+                res += '<{}, [{}, <{} more>, {}]>'.format(
+                    state, self.cbs[0],
+                    size-2, self.cbs[-1])
+            else:
+                res += '<{}, {}>'.format(state, self.cbs)
+        else:
+            res += '<{}>'.format(state)
+        return res
+
+
 
 class Task(Future):
 
@@ -135,6 +158,14 @@ class Task(Future):
                 self.set_result(value)
         self = None  # Needed to break cycles when an exception occurs.
 
+    def __repr__(self):
+        res = super().__repr__()
+        i = res.find('<')
+        if i < 0:
+            i = len(res)
+        res = res[:i] + '(<{}>)'.format(str(self.c)) + res[i:]
+        return res
+
 
 
 # Decorator
@@ -148,6 +179,7 @@ def ensure_future(coro):
     return Task(coro)
 
 async = ensure_future           # "Deprecated since version 3.4.4"
+
 
 class _Wait(Future):
 
@@ -182,21 +214,16 @@ def wait_for(fut, *args, loop=_def_event_loop):
 
 import sys
 
-if sys.platform != 'pyboard':
-
-    def sleep(secs, loop=_def_event_loop):
-        t = time.time()
-        log.debug("Started sleep at: %s, targetting: %s", t, t + secs)
-        while time.time() < t + secs:
-            time.sleep(0.01)
-            yield
-        log.debug("Finished sleeping %ss", secs)
-
-else:
+if sys.platform == 'pyboard':
 
     import pyb
     #import gc
-    sleepy_led = pyb.LED(2)
+    red_led = pyb.LED(1)
+    green_led = pyb.LED(2)
+    yellow_led = pyb.LED(3)
+    blue_led = pyb.LED(4)
+
+    sleepy_led = green_led
     sleepy_led.on()
     sleep_count = 0
 
@@ -214,3 +241,37 @@ else:
                 sleepy_led.toggle()
             yield
         log.debug("Finished sleeping %ss", secs)
+
+    def leds_off():
+        for i in range(4):
+            pyb.LED(i+1).off()
+
+    def toggle_yellow():
+        yellow_led.toggle()
+
+    def toggle_blue():
+        blue_led.toggle()
+
+    def yellow_off():
+        yellow_led.off()
+else:
+
+    def sleep(secs, loop=_def_event_loop):
+        t = time.time()
+        log.debug("Started sleep at: %s, targetting: %s", t, t + secs)
+        while time.time() < t + secs:
+            time.sleep(0.01)
+            yield
+        log.debug("Finished sleeping %ss", secs)
+
+    def toggle_yellow():
+        pass
+
+    def toggle_blue():
+        pass
+
+    def yellow_off():
+        pass
+
+    def leds_off():
+        pass
