@@ -287,6 +287,7 @@ class XBRadio:
         
         self.AT_response_dispatch = { 'SH': self.consume_ATSH,
                                       'SL': self.consume_ATSL }
+        self.started = False
 
     @asyncio.coroutine
     def start(self):

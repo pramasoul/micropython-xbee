@@ -1,7 +1,9 @@
 """Test for asyncio-based XBee Pro S3B library"""
 
 import asyncio
+import logging
 import unittest
+
 #from ubinascii import hexlify
 
 from async_xbradio import XBRadio, \
@@ -40,10 +42,10 @@ class CoroTestCase(unittest.TestCase):
 class RadioTestCase(unittest.TestCase):
 
     def setUp(self):
+        logging.basicConfig(logging.INFO)
         self.xb = create_test_radio('gse')
-        self.loop = asyncio.new_event_loop()
-        #asyncio.set_event_loop(None)
-        asyncio.set_event_loop(self.loop)
+        self.loop = asyncio.get_event_loop()
+        asyncio.set_event_loop(None)
         
     def tearDown(self):
         pass
@@ -117,7 +119,7 @@ class RadioTestCase(unittest.TestCase):
         self.assertEqual(d, b'bar')
         self.assertEqual((yield from xb.rx_available()), 0)
 
-    #@unittest.skip('takes 3 seconds')
+    @unittest.skip('takes 3 seconds')
     @async_test
     def testSendToNonExistentAddress(self):
         print("this takes 3 seconds: ", end='')
@@ -126,6 +128,45 @@ class RadioTestCase(unittest.TestCase):
         yield from xb.tx('foo', 'thisisanaddress!')
         yield from asyncio.sleep(3, loop=self.loop)
         self.assertEqual((yield from xb.rx_available()), 0)
+
+
+    def testZ(self):
+        #logging.basicConfig(logging.DEBUG)
+
+        @asyncio.coroutine
+        def fun(t):
+            yield from asyncio.sleep(t, loop=self.loop)
+
+        tasks = [asyncio.Task(fun(0.01))]
+        self.loop.run_until_complete(asyncio.wait(tasks, loop=self.loop))
+
+
+    def test_get_packet(self):
+        #logging.basicConfig(logging.DEBUG)
+        #self.xb.verbose = True
+        self.loop.run_until_complete(asyncio.Task(self.xb.start()))
+        self.assertTrue(self.xb.started)
+        self.v = None
+
+        @asyncio.coroutine
+        def getv():
+            yield from asyncio.sleep(0.01, loop=self.loop)
+            t = yield from self.xb.xcvr.get_packet()
+            self.assertEqual(t[-5:], b'\xff\xfe\x00\x00\x00') # The TX status
+            self.v = yield from self.xb.xcvr.get_packet()     # The received packet
+
+        @asyncio.coroutine
+        def test():
+            xb = self.xb
+            self.assertEqual((yield from xb.rx_available()), 0)
+            yield from xb.tx('foo', xb.address)
+            yield from asyncio.sleep(0.02, loop=self.loop)
+            self.assertEqual((yield from xb.rx_available()), 0)
+            self.assertEqual(self.v[-3:], b'foo')
+
+        tasks = [asyncio.Task(getv()), asyncio.Task(test())]
+        #print("tasks is %r" % tasks)
+        self.loop.run_until_complete(asyncio.wait(tasks, loop=self.loop))
 
 
     
