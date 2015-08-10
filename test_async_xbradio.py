@@ -1,8 +1,9 @@
 """Test for asyncio-based XBee Pro S3B library"""
 
-import asyncio
+import asyncio_spin as asyncio
 import logging
 import unittest
+import pyb
 
 #from ubinascii import hexlify
 
@@ -13,28 +14,44 @@ from async_xbradio import XBRadio, \
 from pyb import SPI, Pin, info, millis, elapsed_millis
 
 
+_test_EventLoop = None
+
 def async_test(f):
     def wrapper(*args, **kwargs):
+        global _test_EventLoop
         coro = asyncio.coroutine(f)
-        future = coro(*args, **kwargs)
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(future)
+        #loop = asyncio.get_event_loop()
+        loop = _test_EventLoop
+        #print("wrapper loop %r" % loop)
+        assert isinstance(loop, asyncio.EventLoop)
+        #pyb.LED(1).on()
+        loop.run_until_complete(coro(*args, **kwargs))
     return wrapper
 
 
 class CoroTestCase(unittest.TestCase):
 
     def setUp(self):
+        global _test_EventLoop
+        #print('(setUp', end='')
+        #was_loop = asyncio._def_event_loop
         self.loop = asyncio.new_event_loop()
+        _test_EventLoop = self.loop
+        #assert self.loop is not was_loop
+        #asyncio.set_event_loop(self.loop)
         asyncio.set_event_loop(None)
-        
+        #assert asyncio._def_event_loop is self.loop
+        #assert self.loop is asyncio.get_event_loop()
+        #assert len(self.loop.q) == 0
+        #print(')')
+
     def tearDown(self):
         pass
 
     @async_test
     def testWrap(self):
         v = 1
-        yield from asyncio.sleep(0.1, loop=self.loop)
+        yield from asyncio.sleep(0.1)
         v = 2
         self.assertEqual(v, 2)
 
@@ -42,10 +59,13 @@ class CoroTestCase(unittest.TestCase):
 class RadioTestCase(unittest.TestCase):
 
     def setUp(self):
+        global _test_EventLoop
         logging.basicConfig(logging.INFO)
+        self.loop = asyncio.new_event_loop()
+        _test_EventLoop = self.loop
+        # XBRadio assumes default loop, so set here
+        asyncio.set_event_loop(self.loop)
         self.xb = create_test_radio('gse')
-        self.loop = asyncio.get_event_loop()
-        asyncio.set_event_loop(None)
         
     def tearDown(self):
         pass
@@ -55,21 +75,30 @@ class RadioTestCase(unittest.TestCase):
 
     @async_test
     def testSleep(self):
-        yield from asyncio.sleep(0.01, loop=self.loop)
+        yield from asyncio.sleep(0.01)
 
     @async_test
     def testStartRadio(self):
+        #logging.basicConfig(logging.DEBUG)
+        #self.loop.verbose = True
+        #self.xb.verbose = True
+        #self.xb.xcvr.verbose = True
         yield from self.xb.start()
+        #pyb.LED(1).on()
         self.assertTrue(self.xb.started)
 
     @async_test
     def testAddress(self):
         #self.xb.verbose = True
         #self.xb.xcvr.verbose = True
+        #print("pre-start: ", self.loop, self.loop.q)
+        #logging.basicConfig(logging.DEBUG)
         yield from self.xb.start()
         self.assertIsInstance(self.xb.address, bytes)
         self.assertNotEqual(sum(self.xb.address), 0)
+        #print(self.loop, self.loop.q)
 
+    @unittest.skip("x")
     @async_test
     def testATcmds(self):
         xb = self.xb
@@ -80,6 +109,7 @@ class RadioTestCase(unittest.TestCase):
         yield from at('%V')
         self.assertTrue(3200 < xb.values['%V'] < 3400, "bad voltage %d" % xb.values['%V'])
         
+    @unittest.skip("x")
     @async_test
     def testRxErrorCount(self):
         xb = self.xb
@@ -103,21 +133,36 @@ class RadioTestCase(unittest.TestCase):
     def testSendToSelf(self):
         xb = self.xb
         yield from xb.start()
-        self.assertEqual((yield from xb.rx_available()), 0)
+        self.assertEqual(xb.rx_available(), 0)
         yield from xb.tx('foo', xb.address)
-        yield from asyncio.sleep(0.005, loop=self.loop)
-        self.assertEqual((yield from xb.rx_available()), 1)
+        yield from asyncio.sleep(0.01)
+        self.assertEqual(xb.rx_available(), 1)
         yield from xb.tx('bar', xb.address)
-        yield from asyncio.sleep(0.1, loop=self.loop)
-        self.assertEqual((yield from xb.rx_available()), 2)
+        yield from asyncio.sleep(0.1)
+        self.assertEqual(xb.rx_available(), 2)
         a, d = yield from xb.rx()
         self.assertEqual(a, xb.address)
         self.assertEqual(d, b'foo')
-        self.assertEqual((yield from xb.rx_available()), 1)
+        self.assertEqual(xb.rx_available(), 1)
         a, d = yield from xb.rx()
         self.assertEqual(a, xb.address)
         self.assertEqual(d, b'bar')
-        self.assertEqual((yield from xb.rx_available()), 0)
+        self.assertEqual(xb.rx_available(), 0)
+
+    @async_test
+    def testSendToSelfNoWaiting(self):
+        xb = self.xb
+        yield from xb.start()
+        self.assertEqual(xb.rx_available(), 0)
+        yield from xb.tx('foo', xb.address)
+        yield from xb.tx('bar', xb.address)
+        a, d = yield from xb.rx()
+        self.assertEqual(a, xb.address)
+        self.assertEqual(d, b'foo')
+        a, d = yield from xb.rx()
+        self.assertEqual(a, xb.address)
+        self.assertEqual(d, b'bar')
+
 
     @unittest.skip('takes 3 seconds')
     @async_test
@@ -126,7 +171,7 @@ class RadioTestCase(unittest.TestCase):
         xb = self.xb
         self.assertEqual((yield from xb.rx_available()), 0)
         yield from xb.tx('foo', 'thisisanaddress!')
-        yield from asyncio.sleep(3, loop=self.loop)
+        yield from asyncio.sleep(3)
         self.assertEqual((yield from xb.rx_available()), 0)
 
 
@@ -135,12 +180,13 @@ class RadioTestCase(unittest.TestCase):
 
         @asyncio.coroutine
         def fun(t):
-            yield from asyncio.sleep(t, loop=self.loop)
+            yield from asyncio.sleep(t)
 
         tasks = [asyncio.Task(fun(0.01))]
-        self.loop.run_until_complete(asyncio.wait(tasks, loop=self.loop))
+        self.loop.run_until_complete(asyncio.wait(tasks))
 
 
+    @unittest.skip("obsolete")
     def test_get_frame(self):
         #logging.basicConfig(logging.DEBUG)
         #self.xb.verbose = True
@@ -150,7 +196,7 @@ class RadioTestCase(unittest.TestCase):
 
         @asyncio.coroutine
         def getv():
-            yield from asyncio.sleep(0.01, loop=self.loop)
+            yield from asyncio.sleep(0.01)
             t = yield from self.xb.xcvr.get_frame()
             self.assertEqual(t[-5:], b'\xff\xfe\x00\x00\x00') # The TX status
             self.v = yield from self.xb.xcvr.get_frame()     # The received packet
@@ -158,15 +204,15 @@ class RadioTestCase(unittest.TestCase):
         @asyncio.coroutine
         def test():
             xb = self.xb
-            self.assertEqual((yield from xb.rx_available()), 0)
+            self.assertEqual(xb.rx_available(), 0)
             yield from xb.tx('foo', xb.address)
-            yield from asyncio.sleep(0.02, loop=self.loop)
-            self.assertEqual((yield from xb.rx_available()), 0)
+            yield from asyncio.sleep(0.02)
+            self.assertEqual(xb.rx_available(), 1)
             self.assertEqual(self.v[-3:], b'foo')
 
         tasks = [asyncio.Task(getv()), asyncio.Task(test())]
         #print("tasks is %r" % tasks)
-        self.loop.run_until_complete(asyncio.wait(tasks, loop=self.loop))
+        self.loop.run_until_complete(asyncio.wait(tasks))
 
 
     
