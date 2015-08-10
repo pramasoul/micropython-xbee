@@ -1,20 +1,26 @@
 """Test for micropython asyncio"""
 
-#import asyncio_spin as asyncio
-import asyncio
+import asyncio_spin as asyncio
+#import asyncio
 import logging
 import unittest
 
 import pyb
 
+_test_event_loop = None
+
+
 def async_test(f):
     def wrapper(*args, **kwargs):
         coro = asyncio.coroutine(f)
-        future = coro(*args, **kwargs)
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(future)
+        #loop = asyncio.get_event_loop()
+        loop = _test_event_loop
+        assert isinstance(loop, asyncio.EventLoop)
+        #pyb.LED(1).on()
+        loop.run_until_complete(coro(*args, **kwargs))
     return wrapper
 
+"""
 def async_tasks(f):
     def wrapper(*args, **kwargs):
         coro = asyncio.coroutine(f)
@@ -22,20 +28,31 @@ def async_tasks(f):
         loop = asyncio.get_event_loop()
         loop.run_until_complete(future)
     return wrapper
-
+"""
 
 
 class CoroTestCase(unittest.TestCase):
 
     def setUp(self):
-        self.loop = asyncio.get_event_loop()
+        global _test_event_loop
+        #print('(setUp', end='')
+        #was_loop = asyncio._def_event_loop
+        self.loop = asyncio.new_event_loop()
+        _test_event_loop = self.loop
+        #assert self.loop is not was_loop
+        #asyncio.set_event_loop(self.loop)
         asyncio.set_event_loop(None)
+        #assert asyncio._def_event_loop is self.loop
+        #assert self.loop is asyncio.get_event_loop()
+        #assert len(self.loop.q) == 0
+        #print(')')
         
     def tearDown(self):
         pass
 
     @async_test
     def testWrap(self):
+        #print(self.loop, self.loop.q)
         v = 1
         yield from asyncio.sleep(0.01, loop=self.loop)
         v = 2
@@ -49,7 +66,7 @@ class CoroTestCase(unittest.TestCase):
         self.assertIn(pyb.elapsed_millis(t0), [0,1])
         t0 = pyb.millis()
         yield from asyncio.sleep(0.012, loop=self.loop)
-        self.assertIn(pyb.elapsed_millis(t0), [12,13])
+        self.assertTrue(12 <= pyb.elapsed_millis(t0) < 50)
 
     @async_test
     def testY(self):
@@ -69,8 +86,8 @@ class CoroTestCase(unittest.TestCase):
         def fun(t):
             yield from asyncio.sleep(t, loop=self.loop)
 
-        tasks = [asyncio.Task(fun(0.5))]
-        print(self.loop, tasks)
+        tasks = [asyncio.Task(fun(0.5), loop=self.loop)]
+        #print(self.loop, tasks)
         self.loop.run_until_complete(asyncio.wait(tasks, loop=self.loop))
 
 
@@ -85,8 +102,8 @@ class CoroTestCase(unittest.TestCase):
 
         self.counter = 0
         tasks = [
-            asyncio.Task(count(10)),
-            asyncio.Task(asyncio.sleep(2, loop=self.loop))
+            asyncio.Task(count(10), loop=self.loop),
+            asyncio.Task(asyncio.sleep(2, loop=self.loop), loop=self.loop)
         ]
         self.loop.run_until_complete(asyncio.wait(tasks))
         self.assertEqual(self.counter, 10)

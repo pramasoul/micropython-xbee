@@ -31,7 +31,7 @@ class EventLoop:
         Task(_delayed(c, args, delay))
 
     def run_forever(self):
-        leds_off()
+        #leds_off()
         while self.q:
             toggle_yellow()
             c = self.q.pop(0)
@@ -40,7 +40,7 @@ class EventLoop:
             except LoopStop:
                 yellow_off()
                 return
-        #raise RuntimeError("run_forever() ran out of queue!") # DEBUG
+        raise RuntimeError("run_forever() ran out of queue!") # DEBUG
         # I mean, forever
         while True:
             # Make visible that we've fallen into this pit
@@ -53,9 +53,9 @@ class EventLoop:
         self.call_soon(_cb)
 
     def run_until_complete(self, coro):
-        t = async(coro)
+        t = async(coro, loop=self)
         t.add_done_callback(lambda a: self.stop())
-        #print(t)                # DEBUG
+        #print("r_u_c: t=%r, q=%r" % (t, self.q))     # DEBUG
         self.run_forever()
 
     def close(self):
@@ -71,6 +71,7 @@ def get_event_loop():
     return _def_event_loop
 
 def set_event_loop(loop):
+    global _def_event_loop
     _def_event_loop = loop
 
 
@@ -125,9 +126,9 @@ class Future:
 
 class Task(Future):
 
-    def __init__(self, coro, loop=_def_event_loop):
+    def __init__(self, coro, loop=None):
         super().__init__()
-        self.loop = loop
+        self.loop = loop or _def_event_loop
         self.c = coro
         # upstream asyncio forces task to be scheduled on instantiation
         self.loop.call_soon(self)
@@ -173,10 +174,10 @@ def coroutine(f):
     return f
 
 
-def ensure_future(coro):
-    if isinstance(coro, Future):
-        return coro
-    return Task(coro)
+def ensure_future(coro_or_future, loop=None):
+    if isinstance(coro_or_future, Future):
+        return coro_or_future
+    return Task(coro_or_future, loop=loop)
 
 async = ensure_future           # "Deprecated since version 3.4.4"
 
