@@ -228,7 +228,7 @@ if sys.platform == 'pyboard':
     sleepy_led.on()
     sleep_count = 0
 
-    def sleep(secs, loop=_def_event_loop):
+    def sleep(secs):
         global sleep_count
         millis = round(secs * 1000)
         t = pyb.millis()
@@ -257,7 +257,7 @@ if sys.platform == 'pyboard':
         yellow_led.off()
 else:
 
-    def sleep(secs, loop=_def_event_loop):
+    def sleep(secs):
         t = time.time()
         log.debug("Started sleep at: %s, targetting: %s", t, t + secs)
         while time.time() < t + secs:

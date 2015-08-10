@@ -20,16 +20,6 @@ def async_test(f):
         loop.run_until_complete(coro(*args, **kwargs))
     return wrapper
 
-"""
-def async_tasks(f):
-    def wrapper(*args, **kwargs):
-        coro = asyncio.coroutine(f)
-        future = coro(*args, **kwargs)
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(future)
-    return wrapper
-"""
-
 
 class CoroTestCase(unittest.TestCase):
 
@@ -54,7 +44,7 @@ class CoroTestCase(unittest.TestCase):
     def testWrap(self):
         #print(self.loop, self.loop.q)
         v = 1
-        yield from asyncio.sleep(0.01, loop=self.loop)
+        yield from asyncio.sleep(0.01)
         v = 2
         self.assertEqual(v, 2)
 
@@ -62,10 +52,10 @@ class CoroTestCase(unittest.TestCase):
     @async_test
     def testSleep(self):
         t0 = pyb.millis()
-        yield from asyncio.sleep(0, loop=self.loop)
+        yield from asyncio.sleep(0)
         self.assertIn(pyb.elapsed_millis(t0), [0,1])
         t0 = pyb.millis()
-        yield from asyncio.sleep(0.012, loop=self.loop)
+        yield from asyncio.sleep(0.012)
         self.assertTrue(12 <= pyb.elapsed_millis(t0) < 50)
 
     @async_test
@@ -84,7 +74,7 @@ class CoroTestCase(unittest.TestCase):
         
         @asyncio.coroutine
         def fun(t):
-            yield from asyncio.sleep(t, loop=self.loop)
+            yield from asyncio.sleep(t)
 
         tasks = [asyncio.Task(fun(0.5), loop=self.loop)]
         #print(self.loop, tasks)
@@ -103,7 +93,7 @@ class CoroTestCase(unittest.TestCase):
         self.counter = 0
         tasks = [
             asyncio.Task(count(10), loop=self.loop),
-            asyncio.Task(asyncio.sleep(2, loop=self.loop), loop=self.loop)
+            asyncio.Task(asyncio.sleep(2), loop=self.loop)
         ]
         self.loop.run_until_complete(asyncio.wait(tasks))
         self.assertEqual(self.counter, 10)
