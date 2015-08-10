@@ -18,8 +18,9 @@ _sentinel = []
 
 class EventLoop:
 
-    def __init__(self):
+    def __init__(self, verbose=False):
         self.q = []
+        self.verbose = verbose
 
     def call_soon(self, c, *args):
         self.q.append((c, args))
@@ -32,8 +33,13 @@ class EventLoop:
 
     def run_forever(self):
         #leds_off()
+        n = 0
         while self.q:
             toggle_yellow()
+            if self.verbose and n % 1000 == 0:
+                toggle_red()
+                log.debug("r_f %r: %dk q=%r" % (self, n/1000, self.q))
+            n += 1
             c = self.q.pop(0)
             try:
                 c[0](*c[1])
@@ -253,6 +259,9 @@ if sys.platform == 'pyboard':
     def toggle_blue():
         blue_led.toggle()
 
+    def toggle_red():
+        red_led.toggle()
+
     def yellow_off():
         yellow_led.off()
 else:
@@ -269,6 +278,9 @@ else:
         pass
 
     def toggle_blue():
+        pass
+
+    def toggle_red():
         pass
 
     def yellow_off():
