@@ -65,7 +65,8 @@ class RadioTestCase(unittest.TestCase):
         _test_EventLoop = self.loop
         # XBRadio assumes default loop, so set here
         asyncio.set_event_loop(self.loop)
-        self.xb = create_test_radio('gse')
+        #self.xb = create_test_radio('gse')
+        self.xb = create_test_radio('flt')
         
     def tearDown(self):
         pass
@@ -98,23 +99,23 @@ class RadioTestCase(unittest.TestCase):
         self.assertNotEqual(sum(self.xb.address), 0)
         #print(self.loop, self.loop.q)
 
-    @unittest.skip("x")
     @async_test
     def testATcmds(self):
         xb = self.xb
         yield from xb.start()
-        at = xb.do_AT_cmd_and_process_response
+        at = xb.send_AT_cmd
         yield from at('TP')
-        self.assertTrue(1 < xb.values['TP'] < 60, "bad temperature %d" % xb.values['TP'])
         yield from at('%V')
+        yield from asyncio.sleep(0.01)
+        self.assertTrue(1 < xb.values['TP'] < 60, "bad temperature %d" % xb.values['TP'])
         self.assertTrue(3200 < xb.values['%V'] < 3400, "bad voltage %d" % xb.values['%V'])
         
-    @unittest.skip("x")
+    @unittest.skip("incomplete")
     @async_test
     def testRxErrorCount(self):
         xb = self.xb
         yield from xb.start()
-        at = xb.do_AT_cmd_and_process_response
+        at = xb.send_AT_cmd
         yield from at('ER')
 
     @async_test
@@ -126,7 +127,8 @@ class RadioTestCase(unittest.TestCase):
         t0 = millis()
         with self.assertRaises(FrameWaitTimeout):
             yield from xb.xcvr.get_frame(34)
-        self.assertTrue(34 <= elapsed_millis(t0) < 36)
+        et = elapsed_millis(t0)
+        self.assertTrue(34 <= et < 38, "took %dms (expected 34ms)" % et)
 
 
     @async_test
@@ -164,15 +166,17 @@ class RadioTestCase(unittest.TestCase):
         self.assertEqual(d, b'bar')
 
 
-    @unittest.skip('takes 3 seconds')
+    #@unittest.skip('takes 3 seconds')
     @async_test
     def testSendToNonExistentAddress(self):
         print("this takes 3 seconds: ", end='')
+        #logging.basicConfig(logging.DEBUG)
         xb = self.xb
-        self.assertEqual((yield from xb.rx_available()), 0)
+        yield from xb.start()
+        self.assertEqual(xb.rx_available(), 0)
         yield from xb.tx('foo', 'thisisanaddress!')
         yield from asyncio.sleep(3)
-        self.assertEqual((yield from xb.rx_available()), 0)
+        self.assertEqual(xb.rx_available(), 0)
 
 
     def testZ(self):

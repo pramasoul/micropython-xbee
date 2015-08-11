@@ -1,6 +1,9 @@
 """asyncio-based XBRadio"""
 
 import asyncio_spin as asyncio
+import logging
+
+log = logging.getLogger("xbradio")
 
 from pyb import SPI, Pin
 from pyb import millis, elapsed_millis
@@ -339,6 +342,7 @@ class XBRadio:
         self.modem_status = b[1]
 
     def consume_transmit_status(self, b):
+        #print('{c_t_x(%r)}' % b)        # DEBUG
         # What's worth doing here?
         if (b[4] | b[5]):       # A retransmit or a status problem
             self.print_response_frame(b)
@@ -399,9 +403,9 @@ class XBRadio:
             p += param
         yield from self.xcvr.send_frame(p)
 
-    @asyncio.coroutine
-    def do_AT_cmd_and_process_response(self, cmd, param=None):
-        yield from self.send_AT_cmd(cmd, param)
+#    @asyncio.coroutine
+#    def do_AT_cmd_and_process_response(self, cmd, param=None):
+#        yield from self.send_AT_cmd(cmd, param)
 ###        yield from self.get_and_process_available_frames(timeout=1) # FIXME: is 1ms long enough?
 
     @asyncio.coroutine
