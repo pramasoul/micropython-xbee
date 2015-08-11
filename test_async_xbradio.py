@@ -166,11 +166,10 @@ class RadioTestCase(unittest.TestCase):
         self.assertEqual(d, b'bar')
 
 
-    #@unittest.skip('takes 3 seconds')
+    @unittest.skip('takes 3 seconds')
     @async_test
     def testSendToNonExistentAddress(self):
         print("this takes 3 seconds: ", end='')
-        #logging.basicConfig(logging.DEBUG)
         xb = self.xb
         yield from xb.start()
         self.assertEqual(xb.rx_available(), 0)

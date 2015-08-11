@@ -345,7 +345,7 @@ class XBRadio:
         #print('{c_t_x(%r)}' % b)        # DEBUG
         # What's worth doing here?
         if (b[4] | b[5]):       # A retransmit or a status problem
-            self.print_response_frame(b)
+            log.info(self.str_response_frame(b))
 
     def consume_rx(self, b):
         # Parse out (address, data) from a received RF packet and put in FIFO
@@ -465,29 +465,31 @@ class XBRadio:
                        0x97: "Remote Command Response" }
 
     def print_response_frame(self, frame):
+        print(self.str_response_frame(frame))
+
+    def str_response_frame(self, frame):
         frame_type = frame[0]
         try:
-            print("%s:" % self.response_names[frame_type], end='')
+            s = "%s:" % self.response_names[frame_type]
         except KeyError:
-            print("Unk frame %r" % frame)
-            return
+            return "Unk frame %r" % frame
+
         if frame_type == 0x88:
-            print(" id 0x%x %s %s" %
+            s += (" id 0x%x %s %s" %
                   (frame[1],
                    str(frame[2:4], 'ASCII'),
-                   ["OK", "ERR", "Invalid Cmd", "Invalid Param"][frame[4]]),
-                  end='')
+                   ["OK", "ERR", "Invalid Cmd", "Invalid Param"][frame[4]]))
             if len(frame) > 5:
-                print(" %s" % ' '.join("%x" % v for v in frame[5:]),
-                      end='')
+                s += (" %s" % ' '.join("%x" % v for v in frame[5:]))
+
         elif frame_type == 0x8a:
-            print(" %s" % { 0x00: "HW reset",
+            s += (" %s" % { 0x00: "HW reset",
                             0x01: "Watchdog reset",
                             0x0b: "Network Woke Up",
-                            0x0c: "Network Went To Sleep" }[frame[1]],
-                  end='')
+                            0x0c: "Network Went To Sleep" }[frame[1]])
+
         elif frame_type == 0x8b:
-            print(" id 0x%x, %d retries, %s, %s" %
+            s += (" id 0x%x, %d retries, %s, %s" %
                   (frame[1],
                    frame[4],
                    { 0x00: "Success",
@@ -498,15 +500,15 @@ class XBRadio:
                      0x75: "Indirect message unrequested" }[frame[5]],
 
                    { 0x00: "No Discovery Overhead",
-                     0x02: "Route Discovery" }[frame[6]]),
-                  end='')
+                     0x02: "Route Discovery" }[frame[6]]))
+
         elif frame_type == 0x90:
-            print(" from %s, options 0x%x data %s" %
+            s += (" from %s, options 0x%x data %s" %
                   (':'.join("%x" % v for v in frame[1:9]),
                    frame[11],
-                   ' '.join("%x" % v for v in frame[12:])),
-                  end='')
-        print()
+                   ' '.join("%x" % v for v in frame[12:])))
+
+        return s
 
 
     # various debugging utilities
