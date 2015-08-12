@@ -91,7 +91,7 @@ class CoroTestCase(unittest.TestCase):
         def fun(t):
             yield from asyncio.sleep(t, loop=self.loop)
 
-        tasks = [asyncio.Task(fun(0.01), loop=self.loop)]
+        tasks = [asyncio.async(fun(0.01), loop=self.loop)]
         #print(self.loop, tasks)
         self.loop.run_until_complete(asyncio.wait(tasks, loop=self.loop))
 
@@ -106,8 +106,8 @@ class CoroTestCase(unittest.TestCase):
 
         self.counter = 0
         tasks = [
-            asyncio.Task(count(10), loop=self.loop),
-            asyncio.Task(asyncio.sleep(0.01, loop=self.loop), loop=self.loop)
+            asyncio.async(count(10), loop=self.loop),
+            asyncio.async(asyncio.sleep(0.01, loop=self.loop), loop=self.loop)
         ]
         self.loop.run_until_complete(asyncio.wait(tasks, loop=self.loop))
         self.assertEqual(self.counter, 10)
@@ -132,8 +132,8 @@ class CoroTestCase(unittest.TestCase):
             # their operations is deterministic. The '.' counter would run
             # a thousand times, except that the enclosing loop.run_until_complete()
             # is of this task, which returns after a short sleep
-            asyncio.Task(counter('|', 3, 0.19), loop=_test_EventLoop)
-            asyncio.Task(counter('.', 1000, 0.1), loop=_test_EventLoop)
+            asyncio.async(counter('|', 3, 0.19), loop=_test_EventLoop)
+            asyncio.async(counter('.', 1000, 0.1), loop=_test_EventLoop)
             yield from asyncio.sleep(1, loop=self.loop)
 
         master()
@@ -159,8 +159,8 @@ class CoroTestCase(unittest.TestCase):
             self.assertEqual(v, 'foo')
 
         tasks = [
-            asyncio.Task(coro2(), loop=self.loop),
-            asyncio.Task(asyncio.sleep(0.02, loop=self.loop), loop=self.loop)]
+            asyncio.async(coro2(), loop=self.loop),
+            asyncio.async(asyncio.sleep(0.02, loop=self.loop), loop=self.loop)]
 
         self.loop.run_until_complete(asyncio.wait(tasks, loop=self.loop))
 
@@ -184,8 +184,8 @@ class CoroTestCase(unittest.TestCase):
             self.i = 4
 
         tasks = [
-            asyncio.Task(coro2(), loop=self.loop),
-            asyncio.Task(asyncio.sleep(0.02, loop=self.loop), loop=self.loop)]
+            asyncio.async(coro2(), loop=self.loop),
+            asyncio.async(asyncio.sleep(0.02, loop=self.loop), loop=self.loop)]
 
         self.loop.run_until_complete(asyncio.wait(tasks, loop=self.loop))
         self.loop.close()
@@ -236,7 +236,7 @@ class CoroTestCase(unittest.TestCase):
         def master():
             futures = [None] * 5
             pq('at start')
-            asyncio.Task(completer(futures), loop=_test_EventLoop)
+            asyncio.async(completer(futures), loop=_test_EventLoop)
             pq('after starting completer task')
             for i in range(100):
                 f = yield from enter(futures)

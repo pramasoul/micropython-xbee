@@ -225,7 +225,7 @@ class RadioTestCase(unittest.TestCase):
         def fun(t):
             yield from asyncio.sleep(t)
 
-        tasks = [asyncio.Task(fun(0.01))]
+        tasks = [asyncio.async(fun(0.01))]
         self.loop.run_until_complete(asyncio.wait(tasks))
 
 
@@ -233,7 +233,7 @@ class RadioTestCase(unittest.TestCase):
     def test_get_frame(self):
         #logging.basicConfig(logging.DEBUG)
         #self.xb.verbose = True
-        self.loop.run_until_complete(asyncio.Task(self.xb.start()))
+        self.loop.run_until_complete(asyncio.async(self.xb.start()))
         self.assertTrue(self.xb.started)
         self.v = None
 
@@ -253,7 +253,7 @@ class RadioTestCase(unittest.TestCase):
             self.assertEqual(xb.rx_available(), 1)
             self.assertEqual(self.v[-3:], b'foo')
 
-        tasks = [asyncio.Task(getv()), asyncio.Task(test())]
+        tasks = [asyncio.async(getv()), asyncio.async(test())]
         #print("tasks is %r" % tasks)
         self.loop.run_until_complete(asyncio.wait(tasks))
 
