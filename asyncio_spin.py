@@ -16,7 +16,10 @@ class InvalidStateError(Exception):
 _sentinel = []
 
 
-class EventLoop:
+class BaseEventLoop:
+    pass
+
+class EventLoop(BaseEventLoop):
 
     def __init__(self, verbose=False):
         self.q = []
@@ -216,8 +219,19 @@ def wait(coro_list, loop=_def_event_loop):
 
 
 def wait_for(fut, *args, loop=_def_event_loop):
-    return (yield from fut)
-
+    # https://docs.python.org/3/library/asyncio-task.html
+    # This function is a coroutine, usage:
+    #   "result = yield from asyncio.wait_for(fut, 60.0)"
+    #
+    # This almost works:
+    #return (yield from fut)
+    # but not quite. Brute-force it for now:
+    if isinstance(fut, Future):
+        while not fut.done():
+            yield
+        return fut.result()
+    else:
+        return (yield from fut)
 
 import sys
 
@@ -234,7 +248,7 @@ if sys.platform == 'pyboard':
     sleepy_led.on()
     sleep_count = 0
 
-    def sleep(secs):
+    def sleep(secs, loop=None):
         global sleep_count
         millis = round(secs * 1000)
         t = pyb.millis()
@@ -266,7 +280,7 @@ if sys.platform == 'pyboard':
         yellow_led.off()
 else:
 
-    def sleep(secs):
+    def sleep(secs, loop=None):
         t = time.time()
         log.debug("Started sleep at: %s, targetting: %s", t, t + secs)
         while time.time() < t + secs:

@@ -11,7 +11,7 @@ from async_xbradio import XBRadio, \
     FrameOverrunError, FrameWaitTimeout
 
 
-from pyb import SPI, Pin, info, millis, elapsed_millis
+from pyb import SPI, Pin, info, millis, elapsed_millis, micros, elapsed_micros
 
 
 _test_EventLoop = None
@@ -151,6 +151,7 @@ class RadioTestCase(unittest.TestCase):
         self.assertEqual(d, b'bar')
         self.assertEqual(xb.rx_available(), 0)
 
+
     @async_test
     def testSendToSelfNoWaiting(self):
         xb = self.xb
@@ -175,6 +176,45 @@ class RadioTestCase(unittest.TestCase):
         self.assertEqual(xb.rx_available(), 0)
         yield from xb.tx('foo', 'thisisanaddress!')
         yield from asyncio.sleep(3)
+        self.assertEqual(xb.rx_available(), 0)
+
+
+    @async_test
+    def testTxAndWaitOnStatus(self):
+        logging.basicConfig(logging.DEBUG)
+        print("0: q =", self.loop.q)
+        xb = self.xb
+        yield from xb.start()
+        print("frame_wait: ", list((i,v) for i,v in enumerate(xb.frame_wait) if v))
+        print("1: q =", self.loop.q)
+        f0 = yield from xb.tx('foo', xb.address)
+        print("2: q =", self.loop.q)
+        self.assertIsInstance(f0, asyncio.Future)
+        self.assertFalse(f0.done())
+        print("frame_wait: ", list((i,v) for i,v in enumerate(xb.frame_wait) if v))
+        result_0 = yield from asyncio.wait_for(f0)
+        self.assertTrue(f0.done())
+        print("3: q =", self.loop.q)
+        print("frame_wait: ", list((i,v) for i,v in enumerate(xb.frame_wait) if v))
+        self.assertEqual(result_0, f0.result())
+        self.assertEqual(result_0, bytes(3))
+        yield
+        print("frame_wait: ", list((i,v) for i,v in enumerate(xb.frame_wait) if v))
+        
+        t1 = millis()
+        f1 = yield from xb.tx('bar', xb.address)
+        self.assertIsInstance(f1, asyncio.Future)
+        self.assertIsNot(f1, f0)
+        result_1 = yield from asyncio.wait_for(f1)
+        self.assertTrue(3 < elapsed_millis(t1) < 7)
+        print(elapsed_millis(t1))
+        self.assertEqual(result_1, bytes(3))
+        a, d = yield from xb.rx()
+        self.assertEqual(a, xb.address)
+        self.assertEqual(d, b'foo')
+        a, d = yield from xb.rx()
+        self.assertEqual(a, xb.address)
+        self.assertEqual(d, b'bar')
         self.assertEqual(xb.rx_available(), 0)
 
 

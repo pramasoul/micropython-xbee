@@ -230,14 +230,14 @@ class XBRHAL:
             print("get_frame() returning %r" % rv)
         return rv
 
-    @asyncio.coroutine
-    def flush(self):
-        # Flush out all readily-available frames from the radio
-        while True:
-            try:
-                b = yield from self.get_frame(timeout=0)
-            except FrameWaitTimeout:
-                break
+#    @asyncio.coroutine
+#    def flush(self):
+#        # Flush out all readily-available frames from the radio
+#        while True:
+#            try:
+#                b = yield from self.get_frame(timeout=0)
+#            except FrameWaitTimeout:
+#                break
 
     @asyncio.coroutine
     def send_frame(self, buf):
@@ -277,7 +277,9 @@ class XBRadio:
         self.frame_sequence = 1
         self.address = bytearray(8)
         self.values = {}
-#        self.correspondent_address = bytes(16)
+        #self.correspondent_address = bytes(16)
+        self.frame_wait = [None] * 256
+
 
 	# set up packet parsing dispatch functions
         # 0x88 AT Command Response
@@ -328,7 +330,7 @@ class XBRadio:
             v = self.process_frame(b)
             if v and self.verbose:
                 print("packet not consumed: ", end='')
-                self.print_response_frame(b)
+                self.print_response_frae(b)
 
     def process_frame(self, b):
         # Returns None if the frame was consumed, else returns the frame
@@ -338,14 +340,22 @@ class XBRadio:
         else:
             return b
 
+    def _frame_done(self, fs, result=None):
+        fut = self.frame_wait[fs]
+        #print("setting result for frame #%d %r to %r" % (fs, fut, result))
+        assert isinstance(fut, asyncio.Future)
+        assert not fut.done()
+        fut.set_result(result)
+        self.frame_wait[fs] = None
+
     def consume_modem_status(self, b):
         self.modem_status = b[1]
 
     def consume_transmit_status(self, b):
         #print('{c_t_x(%r)}' % b)        # DEBUG
-        # What's worth doing here?
         if (b[4] | b[5]):       # A retransmit or a status problem
             log.info(self.str_response_frame(b))
+        self._frame_done(b[1], b[4:])
 
     def consume_rx(self, b):
         # Parse out (address, data) from a received RF packet and put in FIFO
@@ -422,14 +432,22 @@ class XBRadio:
             options = 0x01
         if dest_address is None:
             dest_address = self.correspondent_address
-        p = bytes([0x10, self.next_frame_sequence()])
-        p += dest_address
-        p += bytes([0xFF, 0xFE, # "Reserved"
+        fs = self.next_frame_sequence()
+        b = bytes([0x10, fs])
+        b += dest_address
+        b += bytes([0xFF, 0xFE, # "Reserved"
                     0x00,       # use max broadcast radius
                     options])
-        p += data
+        b += data
         #print("tx %s ..." % p[:16]) # DEBUG
-        yield from self.xcvr.send_frame(p)
+        if self.frame_wait[fs]:
+            log.info("A frame still waiting in slot %d: %r" \
+                     % (fs, self.frame_wait[fs]))
+            # FIXME: do something with the old future
+        fut = asyncio.Future()
+        self.frame_wait[fs] = fut
+        yield from self.xcvr.send_frame(b)
+        return fut
 
     @asyncio.coroutine
     def rx(self, timeout=1):
