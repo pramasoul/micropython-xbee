@@ -203,7 +203,6 @@ class CoroTestCase(unittest.TestCase):
 
         @asyncio.coroutine
         def completer(ring):
-            # A task that randomly completes futures in the ring
             n = 0
             while True:
                 for slot in range(len(ring)):
@@ -236,7 +235,7 @@ class CoroTestCase(unittest.TestCase):
         def master():
             futures = [None] * 5
             pq('at start')
-            asyncio.async(completer(futures), loop=_test_EventLoop)
+            self.completer_task = asyncio.async(completer(futures), loop=_test_EventLoop)
             pq('after starting completer task')
             for i in range(100):
                 f = yield from enter(futures)
@@ -248,8 +247,41 @@ class CoroTestCase(unittest.TestCase):
                 self.assertEqual(v, i)
 
         master()
+        del(self.i)
+
+    @async_test
+    def test_wait_for_timeout_A(self):
+        with self.assertRaises(asyncio.TimeoutError):
+            yield from asyncio.wait_for(asyncio.sleep(0.1, loop=self.loop), 0, loop=self.loop)
+        yield from asyncio.wait_for(asyncio.sleep(0.1, loop=self.loop), 0.12, loop=self.loop)
 
 
+    @async_test
+    def test_wait_for_timeout_B(self):
+
+        t0 = pyb.millis()
+        with self.assertRaises(asyncio.TimeoutError):
+            v = yield from asyncio.wait_for(asyncio.Future(loop=self.loop), 0.05, loop=self.loop)
+        et = pyb.elapsed_millis(t0)
+
+
+    def test_wait_for_timeout_C(self):
+        
+        @asyncio.coroutine
+        def coro1():
+            yield
+
+        @asyncio.coroutine
+        def coro2():
+            yield from coro1()
+            return asyncio.Future(loop=self.loop)
+
+        @async_test
+        def master():
+            with self.assertRaises(asyncio.TimeoutError):
+                yield from asyncio.wait_for(coro1(), 0.01, loop=self.loop)
+            with self.assertRaises(asyncio.TimeoutError):
+                yield from asyncio.wait_for(coro1(), 0.1, loop=self.loop)
 
 
 if __name__ == '__main__':

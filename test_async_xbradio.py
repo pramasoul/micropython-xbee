@@ -38,8 +38,12 @@ class CoroTestCase(unittest.TestCase):
         self.loop = asyncio.new_event_loop()
         _test_EventLoop = self.loop
         #assert self.loop is not was_loop
-        #asyncio.set_event_loop(self.loop)
-        asyncio.set_event_loop(None)
+
+        #XBRadio uses default loop:
+        asyncio.set_event_loop(self.loop)
+        #asyncio.set_event_loop(None)
+
+
         #assert asyncio._def_event_loop is self.loop
         #assert self.loop is asyncio.get_event_loop()
         #assert len(self.loop.q) == 0
@@ -167,47 +171,68 @@ class RadioTestCase(unittest.TestCase):
         self.assertEqual(d, b'bar')
 
 
-    @unittest.skip('takes 3 seconds')
+    #@unittest.skip('takes 3 seconds')
     @async_test
     def testSendToNonExistentAddress(self):
         print("this takes 3 seconds: ", end='')
         xb = self.xb
         yield from xb.start()
         self.assertEqual(xb.rx_available(), 0)
+        v = yield from asyncio.wait_for(xb.tx('bar1', 'thisisanaddress!'), 4)
+        print("1:", v)
+        f = yield from xb.tx('bar2', 'thisisanaddress!')
+        self.assertIsInstance(f, asyncio.Future)
+        v = yield from asyncio.wait_for(f, 4)
+        print("2:", v)
+
+
+        with self.assertRaises(asyncio.TimeoutError):
+            f = yield from xb.tx('bar3', 'thisisanaddress!')
+            self.assertIsInstance(f, asyncio.Future)
+            v = yield from asyncio.wait_for(f, 0.1)
+            print("3:", v)
+
+        t0 = pyb.millis()
+        with self.assertRaises(asyncio.TimeoutError):
+            v = yield from asyncio.wait_for(xb.tx('bar4', 'thisisanaddress!'), 0.1)
+            print("4:", v)
+
+        return
+
+
         yield from xb.tx('foo', 'thisisanaddress!')
         yield from asyncio.sleep(3)
         self.assertEqual(xb.rx_available(), 0)
 
-
     @async_test
     def testTxAndWaitOnStatus(self):
-        logging.basicConfig(logging.DEBUG)
-        print("0: q =", self.loop.q)
+        #logging.basicConfig(logging.DEBUG)
+        #print("0: q =", self.loop.q)
         xb = self.xb
         yield from xb.start()
-        print("frame_wait: ", list((i,v) for i,v in enumerate(xb.frame_wait) if v))
-        print("1: q =", self.loop.q)
+        #print("frame_wait: ", list((i,v) for i,v in enumerate(xb.frame_wait) if v))
+        #print("1: q =", self.loop.q)
         f0 = yield from xb.tx('foo', xb.address)
-        print("2: q =", self.loop.q)
+        #print("2: q =", self.loop.q)
         self.assertIsInstance(f0, asyncio.Future)
         self.assertFalse(f0.done())
-        print("frame_wait: ", list((i,v) for i,v in enumerate(xb.frame_wait) if v))
-        result_0 = yield from asyncio.wait_for(f0)
+        #print("frame_wait: ", list((i,v) for i,v in enumerate(xb.frame_wait) if v))
+        result_0 = yield from asyncio.wait_for(f0, None)
         self.assertTrue(f0.done())
-        print("3: q =", self.loop.q)
-        print("frame_wait: ", list((i,v) for i,v in enumerate(xb.frame_wait) if v))
+        #print("3: q =", self.loop.q)
+        #print("frame_wait: ", list((i,v) for i,v in enumerate(xb.frame_wait) if v))
         self.assertEqual(result_0, f0.result())
         self.assertEqual(result_0, bytes(3))
         yield
-        print("frame_wait: ", list((i,v) for i,v in enumerate(xb.frame_wait) if v))
+        #print("frame_wait: ", list((i,v) for i,v in enumerate(xb.frame_wait) if v))
         
         t1 = millis()
         f1 = yield from xb.tx('bar', xb.address)
         self.assertIsInstance(f1, asyncio.Future)
         self.assertIsNot(f1, f0)
-        result_1 = yield from asyncio.wait_for(f1)
+        result_1 = yield from asyncio.wait_for(f1, None)
         self.assertTrue(3 < elapsed_millis(t1) < 7)
-        print(elapsed_millis(t1))
+        #print(elapsed_millis(t1))
         self.assertEqual(result_1, bytes(3))
         a, d = yield from xb.rx()
         self.assertEqual(a, xb.address)

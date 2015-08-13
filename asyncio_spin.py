@@ -1,6 +1,7 @@
+# notes at end-of-file
 import time
 import logging
-
+import pyb
 
 log = logging.getLogger("asyncio")
 
@@ -10,6 +11,9 @@ class LoopStop(Exception):
     pass
 
 class InvalidStateError(Exception):
+    pass
+
+class TimeoutError(Exception):
     pass
 
 # Object not matching any other object
@@ -176,6 +180,9 @@ class Task(Future):
         res = res[:i] + '(<{}>)'.format(str(self.c)) + res[i:]
         return res
 
+    def cancel(self):
+        raise NotImplementedError
+
 
 
 # Decorator
@@ -218,7 +225,7 @@ def wait(coro_list, loop=_def_event_loop):
     return w
 
 
-def wait_for(fut, *args, loop=_def_event_loop):
+def wait_for(fut, timeout, *args, loop=_def_event_loop):
     # https://docs.python.org/3/library/asyncio-task.html
     # This function is a coroutine, usage:
     #   "result = yield from asyncio.wait_for(fut, 60.0)"
@@ -226,12 +233,59 @@ def wait_for(fut, *args, loop=_def_event_loop):
     # This almost works:
     #return (yield from fut)
     # but not quite. Brute-force it for now:
-    if isinstance(fut, Future):
-        while not fut.done():
-            yield
-        return fut.result()
+    if timeout is None:
+        if isinstance(fut, Future):
+            while not fut.done():
+                yield
+            return fut.result()
+        else:
+            return (yield from fut)
     else:
+        #ms = round(timeout * 1000)
+        ms = int(timeout * 1000) + 1
+        t = pyb.millis()
+        if isinstance(fut, Future):        
+            while not fut.done() and pyb.elapsed_millis(t) < ms:
+                yield
+            if fut.done():
+                return fut.result()
+            else:
+                raise TimeoutError
+        else:
+            while pyb.elapsed_millis(t) < ms:
+                try:
+                    next(fut)
+                    yield
+                except StopIteration as e:
+                    return(e.value)
+            raise TimeoutError
+    """
+    if isinstance(fut, Future):
+        if timeout is None:
+            while not fut.done():
+                yield
+            return fut.result()
+        else:
+            millis = round(timeout * 1000)
+            t = pyb.millis()
+            while not fut.done() and pyb.elapsed_millis(t) < millis:
+                yield
+            if fut.done():
+                return fut.result()
+            raise TimeoutError
+    else:
+        # Fixme: implement timeout
         return (yield from fut)
+    """
+
+# This doesn't work; doesn't return future's completed value
+#def wait_for(fut, *args, loop=_def_event_loop):
+#    w = _Wait(1)
+#    t = async(fut)
+#    t.add_done_callback(lambda val: w._done())
+#    return w
+
+
 
 import sys
 
@@ -302,3 +356,31 @@ else:
 
     def leds_off():
         pass
+
+# Notes:
+
+# Concepts:
+
+## coroutine: a generator function, returning a generator that:
+### yields to allow others to run
+### may return a value
+### has a decorator to document (and possibly hook in checks or debug)
+
+## Future: a class, instances of which:
+### are either done() or not (and are born not done())
+### get done when set_result(value) is called
+### 
+
+
+## Task
+## EventLoop
+
+
+# Things run in an EventLoop. There can be more than one.
+## An EventLoop has a queue of functions to call, with arguments.
+### Functions enter the EventLoop queue via call_soon(function, *args).
+### Queued functions are run by EventLoop.run_forever()
+#### run_forever() returns if a queued fun raises LoopStop
+
+
+# 

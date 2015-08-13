@@ -444,7 +444,10 @@ class XBRadio:
             log.info("A frame still waiting in slot %d: %r" \
                      % (fs, self.frame_wait[fs]))
             # FIXME: do something with the old future
-        fut = asyncio.Future()
+
+        # NOTE this creation of a Future ties us to the default eventloop:
+        fut = asyncio.Future()  # Don't know our loop so must take default
+
         self.frame_wait[fs] = fut
         yield from self.xcvr.send_frame(b)
         return fut
