@@ -229,6 +229,45 @@ class CoroTestCase(unittest.TestCase):
         self.assertEqual(self.result, 'M.M111.1M...E')
         del(self.result)
 
+
+    def testSubCoroWithRV(self):
+
+        @coroutine
+        def factorial(n):
+            rv = 1
+            for i in range(n):
+                rv *= (i+1)
+                yield from sleep(0.01)
+            return rv
+
+        @async_test
+        def master():
+            result = yield from factorial(5)
+            self.assertEqual(result, 120)
+
+        master()
+
+
+    def testFib_A(self):
+
+        @coroutine
+        def fib(n):
+            yield from sleep(n/1000)
+            if n <= 2:
+                return 1
+            return ((yield from fib(n-1)) + (yield from fib(n-2)))
+
+        @async_test
+        def master():
+            result = yield from fib(10)
+            self.assertEqual(result, 55)
+
+        master()
+
+
+
+
+
     @async_test
     def testTimings(self):
         t0 = self.loop.time()
@@ -242,12 +281,6 @@ class CoroTestCase(unittest.TestCase):
         #FIXME self.assertTrue(15/1000 <= dt <= 17/1000, "dt %f (expected 0.016)" % dt)
         self.assertTrue(14/1000 <= dt <= 0.017, "dt %f (expected 0.016)" % dt)
 
-
-    @unittest.skip("x")
-    @async_test
-    def test_wait_for_A(self):
-        yield from wait_for(sleep(0.01, loop=self.loop), None, loop=self.loop)
-        yield from wait_for(sleep(0.02, loop=self.loop), None, loop=self.loop)
 
     @unittest.skip("x")
     def test_wait_for_B(self):
