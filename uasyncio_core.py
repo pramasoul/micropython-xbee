@@ -160,7 +160,7 @@ def coroutine(f):
 #
 
 def async(coro, loop=_event_loop):
-    _event_loop.call_soon(coro)
+    loop.call_soon(coro)
     # CPython asyncio incompatibility: we don't return Task object
     return coro
 
@@ -168,4 +168,4 @@ def async(coro, loop=_event_loop):
 # CPython asyncio incompatibility: Task is a function, not a class (for efficiency)
 def Task(coro, loop=_event_loop):
     # Same as async()
-    _event_loop.call_soon(coro)
+    loop.call_soon(coro)
