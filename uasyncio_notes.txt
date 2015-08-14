@@ -1,0 +1,60 @@
+Notes re: asyncio.core and asyncio_4pyb
+
+asyncio.core.EventLoop:
+
+The scheduler. Runs function and coroutines.
+
+Has a queue, in time order, implemented as a heapq, containing tuples
+(time, a count to enforce FIFO ordering for entries having the same
+time, the function or coroutine to call or send to, and its args).
+
+Function and coroutines enter the queue via:
+
+* call_soon(), which schedules for execution immediately after others
+  already scheduled for immediate execution (by using a time of 0)
+
+* call_later(), which takes a delay
+
+* call_at(), which schedules for a specified time
+
+run_forever() is the scheduler loop. It runs until some coroutine in
+its queue yields a StopLoop instance (not returns, not raises). It
+pops the front entry of its queue, wait()'s if the target time is
+later than now, and calls or sends the args.
+
+A coroutine's yield is examined. It can be a SysCall, a coroutine, or
+None (anything else is an error). Or it can return (which is received
+as a StopIteration by the send()'er, run_forever()).
+
+* A SysCall is an object, having a list of args, copied from
+  initialization.
+
+** A Sleep is a SysCall, whose first arg is the delay to use when
+   scheduling the next send() of this coroutine. This has the effect
+   of delaying how long this yield of a Sleep takes before the
+   coroutine proceeds.
+
+** A StopLoop is a SysCall, which causes the run_forever() to return,
+   with the first arg as its return value.
+
+* A yielded coroutine gets scheduled to be called soon (in addition
+  to, and before, this one).
+
+* A yielded None just leaves this coroutine to get back in line to be
+  called soon.
+
+A coroutine return means it's done, so no more send()'s get scheduled
+(its return value is ignored). Otherwise it gets back in the queue,
+with a delay value if the yield was a Sleep.
+
+If the queue runs dry the loop will do a wait(-1), which in the
+uasyncio implementation hangs, as the default wait() just does
+time.sleep(). The 4pyb version returns quickly if delay <= 0, and if
+sufficient time exists it does a gc.collect().
+
+EventLoop.time() returns the time, in the default implementation
+time.time(). This is not great on the pyboard, as it has only
+one-second resolution. The 4pyb version overrides it with
+pyb.elapsed_millis() from the time of import, giving millisecond
+resolution.
+
