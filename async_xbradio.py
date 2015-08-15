@@ -1,6 +1,14 @@
 """asyncio-based XBRadio"""
 
-import asyncio_spin as asyncio
+from asyncio_4pyb import \
+    EventLoop, new_event_loop, get_event_loop, set_event_loop, \
+    coroutine, sleep, \
+    Sleep, StopLoop
+
+from asyncio_4pyb import Future
+
+from asyncio_4pyb import async, Task # deprecated functions
+
 import logging
 
 log = logging.getLogger("xbradio")
@@ -157,32 +165,32 @@ class XBRHAL:
 
         self.verbose = False
 
-    @asyncio.coroutine
+    @coroutine
     def hard_reset(self):
         yield from self.force_SPI()
         self.pb = FrameBuffer() # lose the old one
 
-    @asyncio.coroutine
+    @coroutine
     def force_SPI(self):
         # reset and force the XBee into SPI mode
         self.nRESET.low()
         self.DOUT.low()
-        yield from asyncio.sleep(0.01) # IIRC noticably less than 10ms fails
+        yield from sleep(0.01) # IIRC noticably less than 10ms fails
         self.nRESET.high()
         #delay(100)              # Without nATTN watch loop, 85ms is unreliable. 100ms is ok.
         #t0 = millis()
         while self.nATTN.value():
-            #yield from asyncio.sleep(0.001)
+            #yield from sleep(0.001)
             yield
         #print(elapsed_millis(t0))
         self.DOUT.high()
         
-    @asyncio.coroutine
+    @coroutine
     def get_frame(self, timeout=None):
         # Get a frame from the radio
         # or raise FrameWaitTimeout if none available in specified time
 
-        @asyncio.coroutine
+        @coroutine
         def get_frame_by_reading(limit=None):
             # Helper to get a packet from the radio itself
             # Note it will spin forever if the radio has no packet
@@ -230,7 +238,7 @@ class XBRHAL:
             print("get_frame() returning %r" % rv)
         return rv
 
-#    @asyncio.coroutine
+#    @coroutine
 #    def flush(self):
 #        # Flush out all readily-available frames from the radio
 #        while True:
@@ -239,7 +247,7 @@ class XBRHAL:
 #            except FrameWaitTimeout:
 #                break
 
-    @asyncio.coroutine
+    @coroutine
     def send_frame(self, buf):
         # Wrap buffer contents in an API frame and send to the radio
         # Radio may be sending a frame to us at the same time
@@ -300,7 +308,7 @@ class XBRadio:
                                       'SL': self.consume_ATSL }
         self.started = False
 
-    @asyncio.coroutine
+    @coroutine
     def start(self):
         t0 = millis()
         yield from self.xcvr.hard_reset()
@@ -310,17 +318,17 @@ class XBRadio:
                 break
             # FIXME: improve safety
         yield from self.request_MAC_from_radio()
-        asyncio.Task(self.get_and_process_frames())
+        yield self.get_and_process_frames() # start this task
         while sum(self.address[0:4]) * sum(self.address[4:8]) == 0:
             yield
         self.started = True
 
-    @asyncio.coroutine
+    @coroutine
     def reset(self):
         yield from self.xcvr.hard_reset()
         #FIXME: kill existing get_and_process_frames() if any
 
-    @asyncio.coroutine
+    @coroutine
     def get_and_process_frames(self):
         # Consume and process packets from radio
         while True:
@@ -343,7 +351,7 @@ class XBRadio:
     def _frame_done(self, fs, result=None):
         fut = self.frame_wait[fs]
         #print("setting result for frame #%d %r to %r" % (fs, fut, result))
-        assert isinstance(fut, asyncio.Future)
+        assert isinstance(fut, Future)
         assert not fut.done()
         fut.set_result(result)
         self.frame_wait[fs] = None
@@ -398,7 +406,7 @@ class XBRadio:
             self.frame_sequence = 1
         return self.frame_sequence
 
-    @asyncio.coroutine
+    @coroutine
     def send_AT_cmd(self, cmd, param=None):
         p = bytes([0x08, self.next_frame_sequence()])
         p += bytes(cmd, 'ASCII')
@@ -413,17 +421,17 @@ class XBRadio:
             p += param
         yield from self.xcvr.send_frame(p)
 
-#    @asyncio.coroutine
+#    @coroutine
 #    def do_AT_cmd_and_process_response(self, cmd, param=None):
 #        yield from self.send_AT_cmd(cmd, param)
 ###        yield from self.get_and_process_available_frames(timeout=1) # FIXME: is 1ms long enough?
 
-    @asyncio.coroutine
+    @coroutine
     def request_MAC_from_radio(self):
         yield from self.send_AT_cmd('SH')
         yield from self.send_AT_cmd('SL')
 
-    @asyncio.coroutine
+    @coroutine
     def tx(self, data, dest_address=None, ack=True):
         # Transmit an RF packet
         if ack:
@@ -446,13 +454,13 @@ class XBRadio:
             # FIXME: do something with the old future
 
         # NOTE this creation of a Future ties us to the default eventloop:
-        fut = asyncio.Future()  # Don't know our loop so must take default
+        fut = Future()  # Don't know our loop so must take default
 
         self.frame_wait[fs] = fut
         yield from self.xcvr.send_frame(b)
         return fut
 
-    @asyncio.coroutine
+    @coroutine
     def rx(self, timeout=1):
         # return next available (address, data) received
         #print("rx(timeout=%d): len(received_data_packets) = %d"
@@ -463,7 +471,7 @@ class XBRadio:
             except IndexError:
                 yield
 
-    @asyncio.coroutine
+    @coroutine
     def will_rx(self):
         x = self.xcvr
         rv = None

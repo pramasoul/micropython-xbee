@@ -29,6 +29,7 @@ class EventLoop(uac.EventLoop):
 
     def wait(self, delay):
         t0 = pyb.millis()
+        # if delay == -1 the queue got emptied without stopping the loop
         if delay <= 0:
             return
         ms_delay = int(delay * 1000)
@@ -66,7 +67,58 @@ def sleep(secs, loop=None):
     yield from uac.sleep(secs)
     
 
-# FIXME: hack for testing
-def wait(tasks, loop=None):
-    loop = loop or get_event_loop()
-    return tasks.pop()
+# from asyncio_slow, with modifications
+class InvalidStateError(Exception):
+    pass
+
+# Object not matching any other object
+_sentinel = []
+
+class Future:
+
+    def __init__(self, loop=None):
+        self.loop = loop or get_event_loop()
+        self.res = _sentinel
+        self.cbs = []
+
+    def result(self):
+        if self.res is _sentinel:
+            raise InvalidStateError
+        return self.res
+
+    def add_done_callback(self, fn):
+        if self.res is _sentinel:
+            self.cbs.append(fn)
+        else:
+            self.loop.call_soon(fn, self)
+
+    def set_result(self, val):
+        self.res = val
+        for f in self.cbs:
+            f(self)
+
+    def done(self):
+        return self.res is not _sentinel
+
+    # FIXME: is this right for uasyncio?
+    def __iter__(self):
+        if self.res is _sentinel:
+            yield self
+        assert self.done(), "yield from wasn't used with future"
+        return self.result()
+
+    def __repr__(self):
+        res = self.__class__.__name__
+        state =  self.res == _sentinel and 'PENDING' or 'FINISHED'
+        if self.cbs:
+            size = len(self.cbs)
+            if size > 2:
+                res += '<{}, [{}, <{} more>, {}]>'.format(
+                    state, self.cbs[0],
+                    size-2, self.cbs[-1])
+            else:
+                res += '<{}, {}>'.format(state, self.cbs)
+        else:
+            res += '<{}>'.format(state)
+        return res
+

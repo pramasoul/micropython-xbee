@@ -2,8 +2,9 @@
 
 from asyncio_4pyb import \
     EventLoop, new_event_loop, get_event_loop, set_event_loop, \
-    coroutine, sleep, wait, \
-    Sleep, StopLoop
+    coroutine, sleep, \
+    Sleep, StopLoop, \
+    Future
 
 from asyncio_4pyb import async, Task # deprecated functions
 
@@ -38,6 +39,7 @@ class CoroTestCase(unittest.TestCase):
     def tearDown(self):
         self.loop.close()
 
+
     @async_test
     def testWrap(self):
         v = 1
@@ -45,15 +47,15 @@ class CoroTestCase(unittest.TestCase):
         v = 2
         self.assertEqual(v, 2)
 
-    @unittest.skip("Future is too different from Cpython")
-    def testFuture(self):
+
+    def testFuture_A(self):
         class FooE(Exception):
             pass
 
         def _pfooey(f):
             raise FooE
 
-        fut = asyncio.Future(loop=self.loop)
+        fut = Future(loop=self.loop)
         self.assertFalse(fut.done())
         fut.add_done_callback(_pfooey)
         with self.assertRaises(FooE):
@@ -61,6 +63,45 @@ class CoroTestCase(unittest.TestCase):
         self.assertTrue(fut.done())
         self.assertEqual(fut.result(), 42)
         
+
+    @async_test
+    def testFuture_B(self):
+        # If a future is done, a yield from it returns it's result
+        fut = Future(loop=self.loop)
+        self.assertFalse(fut.done())
+        fut.set_result('happy')
+        v = yield from fut
+        #print("future returned", v)
+        self.assertEqual(fut.result(), 'happy')
+        
+
+    def testFuture_C(self):
+        # If a future is not done, a yield from it waits for its
+        # result and returns it
+
+        class FooE(Exception):
+            pass
+
+        def _pfooey(f):
+            raise FooE
+
+        @coroutine
+        def coro(f):
+            yield from sleep(0.05)
+            f.set_result('happy')
+            return 'good'
+
+        @async_test
+        def master():
+            fut = Future(loop=self.loop)
+            self.assertFalse(fut.done())
+            cv = yield coro(fut)
+            fv = yield from fut
+            print("future returned", fv)
+            self.assertEqual(fut.result(), 'happy')
+
+        master()
+
 
     @unittest.skip("TODO: fix sleep")
     @async_test
@@ -265,9 +306,6 @@ class CoroTestCase(unittest.TestCase):
         master()
 
 
-
-
-
     @async_test
     def testTimings(self):
         t0 = self.loop.time()
@@ -424,6 +462,7 @@ class CoroTestCase(unittest.TestCase):
                 yield from wait_for(coro1(), 0.01, loop=self.loop)
             with self.assertRaises(TimeoutError):
                 yield from wait_for(coro1(), 0.1, loop=self.loop)
+
 
 
 if __name__ == '__main__':
