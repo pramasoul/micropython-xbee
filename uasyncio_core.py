@@ -10,6 +10,18 @@ log = logging.getLogger("asyncio")
 
 type_gen = type((lambda: (yield))())
 
+################
+# Debugging aids
+def foo(cb, loop, *args):
+    def fcb(fut):
+        #loop.call_soon(cb, *args)
+        loop.call_soon(cb, fut)
+    print("foo(%r, %r, %r)" % (cb, loop, args), end='...')
+    return fcb
+#
+################
+
+
 class EventLoop:
 
     def __init__(self):
@@ -87,6 +99,22 @@ class EventLoop:
                             self.remove_reader(arg.fileno())
                         elif isinstance(ret, IOWriteDone):
                             self.remove_writer(arg.fileno())
+
+                        # EXPERIMENTAL
+                        elif isinstance(ret, GetRunningCoro):
+                            self.call_soon(cb, cb)
+                            continue
+                        elif isinstance(ret, GetRunningLoop):
+                            self.call_soon(cb, self)
+                            continue
+                        elif isinstance(ret, BlockUntilDone):
+                            # assume arg is a future
+                            #arg.add_done_callback(lambda f: self.call_soon(cb))
+                            print('BUD: %r' % arg, end='...')
+                            arg.add_done_callback(foo(cb, self, 'kittens'))
+                            print('is now %r' % arg)
+                            continue
+
                         elif isinstance(ret, StopLoop):
                             return arg
                     elif isinstance(ret, type_gen):
@@ -121,6 +149,15 @@ class SysCall:
     def handle(self):
         raise NotImplementedError
 
+class BlockUntilDone(SysCall):
+    pass
+
+class GetRunningCoro(SysCall):
+    pass
+
+class GetRunningLoop(SysCall):
+    pass
+
 class Sleep(SysCall):
     pass
 
@@ -138,6 +175,7 @@ class IOReadDone(SysCall):
 
 class IOWriteDone(SysCall):
     pass
+
 
 
 _event_loop = None

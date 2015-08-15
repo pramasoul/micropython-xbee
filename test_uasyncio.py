@@ -2,8 +2,8 @@
 
 from asyncio_4pyb import \
     EventLoop, new_event_loop, get_event_loop, set_event_loop, \
-    coroutine, sleep, \
-    Sleep, StopLoop, \
+    coroutine, sleep, wait_for, \
+    Sleep, StopLoop, GetRunningCoro, GetRunningLoop, BlockUntilDone, \
     Future
 
 from asyncio_4pyb import async, Task # deprecated functions
@@ -48,6 +48,22 @@ class CoroTestCase(unittest.TestCase):
         self.assertEqual(v, 2)
 
 
+    @async_test
+    def testGetRunningCoro(self):
+        v = yield GetRunningCoro(None)
+        print("tGRC:", v, end='...')
+        yield from sleep(0.01)
+        print("okay", end='...')
+
+    @async_test
+    def testGetRunningLoop(self):
+        v = yield GetRunningLoop(None)
+        print("tGRL:", v, end='...')
+        self.assertIs(v, self.loop)
+        yield from sleep(0.01)
+        print("okay", end='...')
+
+
     def testFuture_A(self):
         class FooE(Exception):
             pass
@@ -68,26 +84,32 @@ class CoroTestCase(unittest.TestCase):
     def testFuture_B(self):
         # If a future is done, a yield from it returns it's result
         fut = Future(loop=self.loop)
-        self.assertFalse(fut.done())
         fut.set_result('happy')
         v = yield from fut
-        #print("future returned", v)
-        self.assertEqual(fut.result(), 'happy')
+        self.assertEqual(v, 'happy')
         
 
-    def testFuture_C(self):
-        # If a future is not done, a yield from it waits for its
+    @async_test
+    def testwaitForFuture_A(self):
+        # If a future is done, a wait_for() of it returns its result
+        fut = Future(loop=self.loop)
+        fut.set_result('happy')
+        v = yield from wait_for(fut)
+        #print("yield from wait_for(future) returned", v)
+        self.assertEqual(fut.result(), 'happy')
+        self.assertEqual(v, 'happy')
+        
+
+    #@unittest.skip("WIP")
+    def testWaitForFuture_B(self):
+        # If a future is not done, a wait_for() of it waits for its
         # result and returns it
-
-        class FooE(Exception):
-            pass
-
-        def _pfooey(f):
-            raise FooE
+        logging.basicConfig(level=logging.DEBUG)
 
         @coroutine
         def coro(f):
             yield from sleep(0.05)
+            print('making %r happy' % f)
             f.set_result('happy')
             return 'good'
 
@@ -95,15 +117,15 @@ class CoroTestCase(unittest.TestCase):
         def master():
             fut = Future(loop=self.loop)
             self.assertFalse(fut.done())
-            cv = yield coro(fut)
-            fv = yield from fut
-            print("future returned", fv)
+            cv = yield coro(fut) # start the fuse
+            fv = yield from wait_for(fut)
+            print("yield from wait_for(future) returned", fv, end='...')
+            self.assertTrue(fut.done())
             self.assertEqual(fut.result(), 'happy')
 
         master()
 
 
-    @unittest.skip("TODO: fix sleep")
     @async_test
     def testSleep(self):
 
@@ -112,11 +134,11 @@ class CoroTestCase(unittest.TestCase):
             t0 = pyb.millis()
             yield from sleep(secs, loop=self.loop)
             et = pyb.elapsed_millis(t0) / 1000
-            self.assertTrue(secs <= et < secs*1.01 + 0.01, \
+            self.assertTrue(secs-0.002 <= et < secs*1.01 + 0.01, \
                             "slept for %fs (expected %f)" % (et, secs))
 
         yield from ts(0)
-        yield from ts(1)
+        yield from ts(0.1)
         yield from ts(0.012)
 
     @async_test
@@ -135,24 +157,6 @@ class CoroTestCase(unittest.TestCase):
             yield from sleep(t, loop=self.loop)
 
         self.loop.run_until_complete(coro(0.01))
-
-
-    @unittest.skip("not u")
-    def testX(self):
-
-        @coroutine
-        def count(n):
-            for i in range(n):
-                self.counter += 1
-                yield
-
-        self.counter = 0
-        tasks = [
-            async(count(10), loop=self.loop),
-            async(sleep(0.01, loop=self.loop), loop=self.loop)
-        ]
-        self.loop.run_until_complete(wait(tasks, loop=self.loop))
-        self.assertEqual(self.counter, 10)
 
 
     def testXu(self):
@@ -180,7 +184,7 @@ class CoroTestCase(unittest.TestCase):
 
         self.counter = 0
         self.loop.call_soon(count(10))
-        self.loop.run_until_complete(sleep(0.01, loop=self.loop))
+        self.loop.run_until_complete(sleep(0.011, loop=self.loop))
         self.assertEqual(self.counter, 10)
 
 
@@ -320,12 +324,12 @@ class CoroTestCase(unittest.TestCase):
         self.assertTrue(14/1000 <= dt <= 0.017, "dt %f (expected 0.016)" % dt)
 
 
-    @unittest.skip("x")
+    @unittest.skip("wait_for() isn't ready")
     def test_wait_for_B(self):
 
         @coroutine
         def coro1():
-            yield from wait_for(sleep(0.01, loop=self.loop), None, loop=self.loop)
+            yield wait_for(sleep(0.01, loop=self.loop), None, loop=self.loop)
             return 'foo'
 
         @coroutine
@@ -340,7 +344,7 @@ class CoroTestCase(unittest.TestCase):
         self.loop.run_until_complete(wait(tasks, loop=self.loop))
 
 
-    @unittest.skip("x")
+    @unittest.skip("wait_for() isn't ready")
     def test_wait_for_C(self):
 
         @coroutine
@@ -368,7 +372,8 @@ class CoroTestCase(unittest.TestCase):
         self.assertEqual(self.i, 4)
         del(self.i)
 
-    @unittest.skip("x")
+
+    @unittest.skip("wait_for() isn't ready")
     #@unittest.skip("fixme")
     def test_wait_for_D(self):
         #logging.basicConfig(level=logging.DEBUG)
@@ -462,6 +467,47 @@ class CoroTestCase(unittest.TestCase):
                 yield from wait_for(coro1(), 0.01, loop=self.loop)
             with self.assertRaises(TimeoutError):
                 yield from wait_for(coro1(), 0.1, loop=self.loop)
+
+
+    def testYieldFromPassthru(self):
+
+        def ranger(n):
+            v = 0
+            for i in range(n):
+                v += i
+                yield i
+            return v
+        
+        def retRightAway(v):
+            for x in []:
+                yield x
+            return v
+
+        def delranger(n):
+            return (yield from ranger(n))
+
+        def delany(g):
+            return (yield from g)
+
+        def yar(gen):
+            yields = []
+            while True:
+                try:
+                    yields.append(gen.send(None))
+                except StopIteration as e:
+                    return (yields, e.value)
+
+        self.assertEqual(list(range(3)), [0,1,2])
+        self.assertEqual(list(v for v in range(3)), [0,1,2])
+        self.assertEqual(list(v for v in ranger(3)), [0,1,2])
+        self.assertEqual(list(v for v in delranger(3)), [0,1,2])
+        self.assertEqual(yar(ranger(3)), ([0,1,2], 3))
+        self.assertEqual(yar(delranger(3)), ([0,1,2], 3))
+        self.assertEqual(yar(delany(ranger(3))), ([0,1,2], 3))
+        self.assertEqual(yar(ranger(0)), ([], 0))
+        self.assertEqual( (yield from retRightAway(7)) , 7)
+        self.assertEqual(delany(retRightAway(7)), 7)
+        self.assertEqual(yar(delany(retRightAway(7))), ([], 7))
 
 
 

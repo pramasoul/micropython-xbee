@@ -2,7 +2,7 @@
 
 import uasyncio_core as uac
 from uasyncio_core import get_event_loop, coroutine, \
-    Sleep, StopLoop, \
+    Sleep, StopLoop, GetRunningCoro, GetRunningLoop, BlockUntilDone, \
     async, Task # Deprecated
 
 import pyb
@@ -12,7 +12,8 @@ import gc
 #red_led = pyb.LED(1)
 green_led = pyb.LED(2)
 #yellow_led = pyb.LED(3)
-#blue_led = pyb.LED(4)
+blue_led = pyb.LED(4)
+
 
 
 class EventLoop(uac.EventLoop):
@@ -30,7 +31,11 @@ class EventLoop(uac.EventLoop):
     def wait(self, delay):
         t0 = pyb.millis()
         # if delay == -1 the queue got emptied without stopping the loop
-        if delay <= 0:
+        if delay == -1:
+            blue_led.on()
+            return
+        blue_led.off()
+        if delay == 0:
             return
         ms_delay = int(delay * 1000)
         if ms_delay > 3:
@@ -67,7 +72,55 @@ def sleep(secs, loop=None):
     yield from uac.sleep(secs)
     
 
+def wait_for(fut_or_coro, timeout=None, *, loop=None):
+    # FIXME: deal with timeout
+    # FIXME: make this work
+    #print("wait_for(%r)" % fut)
+
+#    def _wakeup(parent, loop):
+#        print('_wakeup(%r, %r)' % (parent, loop))
+#        def resume(fut):
+#            print('resume(%r)' % fut)
+#            loop.call_soon(parent)
+#        return resume
+
+    if isinstance(fut_or_coro, uac.type_gen):
+        coro = fut_or_coro
+        return (yield from coro)
+
+    if isinstance(fut_or_coro, Future):
+        fut = fut_or_coro       # for clairity in this code
+
+        # Spin on it. FIXME: there has to be a better way to do this,
+        # using the future's callbacks
+        #while not fut.done():
+        #    yield
+        #return fut.result()
+
+        if not fut.done():
+            yield BlockUntilDone(fut)
+            assert fut.done()
+        return (yield from fut)
+
+#        parent = yield GetRunningCoro(None)
+#        loop = yield GetRunningLoop(None)
+
+#        fut.add_done_callback(_wakeup(parent, loop))
+        #fut.add_done_callback(lambda f: )
+
+
+#        return None
+#
+#        yield from sleep(1)
+#        return 'FIXME'
+
+
+
+################################################################
+#
+# Futures
 # from asyncio_slow, with modifications
+
 class InvalidStateError(Exception):
     pass
 
@@ -121,4 +174,5 @@ class Future:
         else:
             res += '<{}>'.format(state)
         return res
+
 
