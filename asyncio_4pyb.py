@@ -73,15 +73,7 @@ def sleep(secs, loop=None):
 
 def wait_for(fut_or_coro, timeout=None, *, loop=None):
     # FIXME: deal with timeout
-    # FIXME: make this work
-    #print("wait_for(%r)" % fut)
-
-#    def _wakeup(parent, loop):
-#        print('_wakeup(%r, %r)' % (parent, loop))
-#        def resume(fut):
-#            print('resume(%r)' % fut)
-#            loop.call_soon(parent)
-#        return resume
+    # FIXME: deal with loop
 
     if isinstance(fut_or_coro, uac.type_gen):
         coro = fut_or_coro
@@ -90,28 +82,16 @@ def wait_for(fut_or_coro, timeout=None, *, loop=None):
     if isinstance(fut_or_coro, Future):
         fut = fut_or_coro       # for clairity in this code
 
-        # Spin on it. FIXME: there has to be a better way to do this,
-        # using the future's callbacks
+        # The slow & simple way: pin on it.
         #while not fut.done():
         #    yield
         #return fut.result()
 
+        # The clever way, with no burn while waiting
         if not fut.done():
             yield BlockUntilDone(fut)
             assert fut.done()
         return (yield from fut)
-
-#        parent = yield GetRunningCoro(None)
-#        loop = yield GetRunningLoop(None)
-
-#        fut.add_done_callback(_wakeup(parent, loop))
-        #fut.add_done_callback(lambda f: )
-
-
-#        return None
-#
-#        yield from sleep(1)
-#        return 'FIXME'
 
 
 
