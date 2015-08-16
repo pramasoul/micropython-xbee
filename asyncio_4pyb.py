@@ -15,7 +15,6 @@ green_led = pyb.LED(2)
 blue_led = pyb.LED(4)
 
 
-
 class EventLoop(uac.EventLoop):
     _t0 = pyb.millis()
 

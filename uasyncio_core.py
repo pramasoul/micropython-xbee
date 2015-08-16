@@ -10,17 +10,6 @@ log = logging.getLogger("asyncio")
 
 type_gen = type((lambda: (yield))())
 
-################
-# Debugging aids
-def foo(cb, loop, *args):
-    def fcb(fut):
-        #loop.call_soon(cb, *args)
-        loop.call_soon(cb, fut)
-    print("foo(%r, %r, %r)" % (cb, loop, args), end='...')
-    return fcb
-#
-################
-
 
 class EventLoop:
 
@@ -109,10 +98,7 @@ class EventLoop:
                             continue
                         elif isinstance(ret, BlockUntilDone):
                             # assume arg is a future
-                            #arg.add_done_callback(lambda f: self.call_soon(cb))
-                            print('BUD: %r' % arg, end='...')
-                            arg.add_done_callback(foo(cb, self, 'kittens'))
-                            print('is now %r' % arg)
+                            arg.add_done_callback(self.future_callback_closure(cb))
                             continue
 
                         elif isinstance(ret, StopLoop):
@@ -139,6 +125,11 @@ class EventLoop:
 
     def close(self):
         pass
+
+    def future_callback_closure(self, cb):
+        def fcb(fut):
+            self.call_soon(cb, fut)
+        return fcb
 
 
 class SysCall:

@@ -104,12 +104,12 @@ class CoroTestCase(unittest.TestCase):
     def testWaitForFuture_B(self):
         # If a future is not done, a wait_for() of it waits for its
         # result and returns it
-        logging.basicConfig(level=logging.DEBUG)
+        #logging.basicConfig(level=logging.DEBUG)
 
         @coroutine
         def coro(f):
             yield from sleep(0.05)
-            print('making %r happy' % f)
+            #print('making %r happy' % f)
             f.set_result('happy')
             return 'good'
 
@@ -119,7 +119,7 @@ class CoroTestCase(unittest.TestCase):
             self.assertFalse(fut.done())
             cv = yield coro(fut) # start the fuse
             fv = yield from wait_for(fut)
-            print("yield from wait_for(future) returned", fv, end='...')
+            #print("yield from wait_for(future) returned", fv, end='...')
             self.assertTrue(fut.done())
             self.assertEqual(fut.result(), 'happy')
 
