@@ -34,7 +34,6 @@ class CoroTestCase(unittest.TestCase):
         assert self.loop is not _test_EventLoop
         _test_EventLoop = self.loop
         set_event_loop(None)
-        #assert asyncio._def_event_loop is None
         
     def tearDown(self):
         self.loop.close()
@@ -51,20 +50,16 @@ class CoroTestCase(unittest.TestCase):
     @async_test
     def testGetRunningCoro(self):
         v = yield GetRunningCoro(None)
-        print("tGRC:", v, end='...')
-        yield from sleep(0.01)
-        print("okay", end='...')
+        self.assertTrue(repr(v).startswith("<generator object '_run_and_stop'"))
 
     @async_test
     def testGetRunningLoop(self):
         v = yield GetRunningLoop(None)
-        print("tGRL:", v, end='...')
         self.assertIs(v, self.loop)
-        yield from sleep(0.01)
-        print("okay", end='...')
 
 
     def testFuture_A(self):
+        # A future, when done, runs callbacks and has a result
         class FooE(Exception):
             pass
 
@@ -82,7 +77,7 @@ class CoroTestCase(unittest.TestCase):
 
     @async_test
     def testFuture_B(self):
-        # If a future is done, a yield from it returns it's result
+        # If a future is done, a yield from it returns its result
         fut = Future(loop=self.loop)
         fut.set_result('happy')
         v = yield from fut
@@ -100,35 +95,22 @@ class CoroTestCase(unittest.TestCase):
         self.assertEqual(v, 'happy')
         
 
-    #@unittest.skip("WIP")
-    def testWaitForFuture_B(self):
+    @async_test
+    def testWaitForFuture_C(self):
         # If a future is not done, a wait_for() of it waits for its
         # result and returns it
-        #logging.basicConfig(level=logging.DEBUG)
-
-        @coroutine
-        def coro(f):
-            yield from sleep(0.05)
-            #print('making %r happy' % f)
-            f.set_result('happy')
-            return 'good'
-
-        @async_test
-        def master():
-            fut = Future(loop=self.loop)
-            self.assertFalse(fut.done())
-            cv = yield coro(fut) # start the fuse
-            fv = yield from wait_for(fut)
-            #print("yield from wait_for(future) returned", fv, end='...')
-            self.assertTrue(fut.done())
-            self.assertEqual(fut.result(), 'happy')
-
-        master()
+        fut = Future(loop=self.loop)
+        self.loop.call_later(0.05, lambda: fut.set_result('happy'))
+        self.assertFalse(fut.done())
+        v = yield from wait_for(fut)
+        self.assertTrue(fut.done())
+        self.assertEqual(fut.result(), 'happy')
+        self.assertEqual(v, 'happy')
 
 
     @async_test
     def testSleep(self):
-
+        # sleep() works with acceptable timing
         @coroutine
         def ts(secs):
             t0 = pyb.millis()
@@ -136,13 +118,14 @@ class CoroTestCase(unittest.TestCase):
             et = pyb.elapsed_millis(t0) / 1000
             self.assertTrue(secs-0.002 <= et < secs*1.01 + 0.01, \
                             "slept for %fs (expected %f)" % (et, secs))
-
         yield from ts(0)
         yield from ts(0.1)
         yield from ts(0.012)
 
+
     @async_test
     def testY(self):
+        # A plain yield in a loop is allowed
         self.counter = 0
         for i in range(10):
             self.counter += 1
@@ -151,7 +134,7 @@ class CoroTestCase(unittest.TestCase):
 
 
     def testZu(self):
-        
+        # A coroutine can sleep
         @coroutine
         def coro(t):
             yield from sleep(t, loop=self.loop)
@@ -160,7 +143,7 @@ class CoroTestCase(unittest.TestCase):
 
 
     def testXu(self):
-
+        # A coroutine can count with yields and finish before a suitable sleep
         @coroutine
         def count(n):
             for i in range(n):
@@ -174,7 +157,7 @@ class CoroTestCase(unittest.TestCase):
 
 
     def testXu2(self):
-
+        # A coroutine can loop with sleeps and get done when expected
         @coroutine
         def count(n):
             for i in range(n):
@@ -189,7 +172,7 @@ class CoroTestCase(unittest.TestCase):
 
 
     def testXu3(self):
-
+        # A Sleep syscall works
         @coroutine
         def count(n):
             for i in range(n):
@@ -203,6 +186,9 @@ class CoroTestCase(unittest.TestCase):
 
 
     def testCreateNewTasks_A(self):
+        # A "yield from" is a coro's version of a subroutine call
+        # A coro can start other coroutines by yield'ing them
+        # Multiple coros can run and sleep in the expected order
         self.result = ''
 
         @coroutine
@@ -215,8 +201,6 @@ class CoroTestCase(unittest.TestCase):
         def master():
             self.result += 'M'
             yield from counter('.', 3, 0.01)
-            assert isinstance(_test_EventLoop, EventLoop), \
-                "_test_EventLoop is %r" % _test_EventLoop
             yield counter('1', 2, 0.01)
             self.result += 'M'
             yield counter('2', 2, 0.01)
@@ -227,31 +211,10 @@ class CoroTestCase(unittest.TestCase):
         del(self.result)
 
 
-    def testCreateNewTasks_B(self):
-        self.result = ''
-
-        @coroutine
-        def counter(name, n, naptime):
-            for i in range(n):
-                self.result += name
-                yield Sleep(naptime) 
-
-        @async_test
-        def master():
-            self.result += 'M'
-            yield from counter('.', 3, 0.01)
-            assert isinstance(_test_EventLoop, EventLoop), \
-                "_test_EventLoop is %r" % _test_EventLoop
-            yield counter('1', 2, 0.01)
-            self.result += 'M'
-            self.loop.call_soon(counter('2', 2, 0.01))
-            yield Sleep(0.05)
-
-        master()
-        self.assertEqual(self.result, 'M...1M212')
-        del(self.result)
-
     def testSubCoro(self):
+        # A "yield from" is a coro's version of a subroutine call
+        # A coro can start other coroutines by yield'ing them
+        # Multiple coros can run and sleep in the expected order
         self.result = ''
 
         @coroutine
@@ -276,13 +239,13 @@ class CoroTestCase(unittest.TestCase):
 
 
     def testSubCoroWithRV(self):
-
+        # A coro can return a result
         @coroutine
         def factorial(n):
             rv = 1
             for i in range(n):
                 rv *= (i+1)
-                yield from sleep(0.01)
+                yield
             return rv
 
         @async_test
@@ -294,7 +257,7 @@ class CoroTestCase(unittest.TestCase):
 
 
     def testFib_A(self):
-
+        # A coro can return a result calculated from other coroutines' results
         @coroutine
         def fib(n):
             yield from sleep(n/1000)
@@ -312,6 +275,7 @@ class CoroTestCase(unittest.TestCase):
 
     @async_test
     def testTimings(self):
+        # Sleep timings make sense (almost)
         t0 = self.loop.time()
         t1 = self.loop.time()
         self.assertTrue(t1-t0 <= 0.001)
@@ -324,12 +288,11 @@ class CoroTestCase(unittest.TestCase):
         self.assertTrue(14/1000 <= dt <= 0.017, "dt %f (expected 0.016)" % dt)
 
 
-    @unittest.skip("wait_for() isn't ready")
     def test_wait_for_B(self):
-
+        # coro can be waited for, and result passed back
         @coroutine
         def coro1():
-            yield wait_for(sleep(0.01, loop=self.loop), None, loop=self.loop)
+            yield from wait_for(sleep(0.01, loop=self.loop), loop=self.loop)
             return 'foo'
 
         @coroutine
@@ -337,16 +300,17 @@ class CoroTestCase(unittest.TestCase):
             v = yield from wait_for(coro1(), None, loop=self.loop)
             self.assertEqual(v, 'foo')
 
-        tasks = [
-            async(coro2(), loop=self.loop),
-            async(sleep(0.02, loop=self.loop), loop=self.loop)]
+        @async_test
+        def master():
+            yield coro2()
+            yield from sleep(0.02, loop=self.loop)
 
-        self.loop.run_until_complete(wait(tasks, loop=self.loop))
+        master()
 
 
-    @unittest.skip("wait_for() isn't ready")
     def test_wait_for_C(self):
-
+        # coro can be waited for, and result passed back
+        # They happen in correct order
         @coroutine
         def coro1():
             self.i = 1
@@ -363,19 +327,21 @@ class CoroTestCase(unittest.TestCase):
             self.assertEqual(self.i, 3)
             self.i = 4
 
-        tasks = [
-            async(coro2(), loop=self.loop),
-            async(sleep(0.02, loop=self.loop), loop=self.loop)]
+        @async_test
+        def master():
+            yield coro2()
+            yield from sleep(0.03, loop=self.loop)
 
-        self.loop.run_until_complete(wait(tasks, loop=self.loop))
-        self.loop.close()
+        master()
         self.assertEqual(self.i, 4)
         del(self.i)
 
 
-    @unittest.skip("wait_for() isn't ready")
+    #@unittest.skip("wait_for() isn't ready")
     #@unittest.skip("fixme")
     def test_wait_for_D(self):
+        # A coro can wait for futures
+        # that another coro periodically completes
         #logging.basicConfig(level=logging.DEBUG)
 
         def pq(label=''):
@@ -409,7 +375,7 @@ class CoroTestCase(unittest.TestCase):
                 self.assertTrue(old.done())
             ring[self.i] = fut
             pq('+')
-            yield
+            yield               # merely to make it a coro
             return fut
             
 
@@ -431,7 +397,7 @@ class CoroTestCase(unittest.TestCase):
         master()
         del(self.i)
 
-    @unittest.skip("x")
+    @unittest.skip("wait_for timeout not implemented")
     @async_test
     def test_wait_for_timeout_A(self):
         with self.assertRaises(TimeoutError):
@@ -439,7 +405,7 @@ class CoroTestCase(unittest.TestCase):
         yield from wait_for(sleep(0.1, loop=self.loop), 0.12, loop=self.loop)
 
 
-    @unittest.skip("x")
+    @unittest.skip("wait_for timeout not implemented")
     @async_test
     def test_wait_for_timeout_B(self):
 
@@ -449,7 +415,7 @@ class CoroTestCase(unittest.TestCase):
         et = pyb.elapsed_millis(t0)
 
 
-    @unittest.skip("x")
+    @unittest.skip("wait_for timeout not implemented")
     def test_wait_for_timeout_C(self):
         
         @coroutine
@@ -470,6 +436,7 @@ class CoroTestCase(unittest.TestCase):
 
 
     def testYieldFromPassthru(self):
+        # How to pass through a 'yield from'
 
         def ranger(n):
             v = 0
@@ -487,9 +454,11 @@ class CoroTestCase(unittest.TestCase):
             return (yield from ranger(n))
 
         def delany(g):
+            # Delegate to any generator
             return (yield from g)
 
         def yar(gen):
+            # Capture yields and return value
             yields = []
             while True:
                 try:
