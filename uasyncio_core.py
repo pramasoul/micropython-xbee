@@ -26,18 +26,19 @@ class EventLoop:
         # CPython asyncio incompatibility: we don't return Task object
 
     def call_soon(self, callback, *args):
-        self.call_at(0, callback, *args)
+        return self.call_at(0, callback, *args)
 
     def call_later(self, delay, callback, *args):
-        self.call_at(self.time() + delay, callback, *args)
+        return self.call_at(self.time() + delay, callback, *args)
 
     def call_at(self, time, callback, *args):
         # Including self.cnt is a workaround per heapq docs
+        # Returning it provides a handle for locating a queue entry
         if __debug__:
             log.debug("Scheduling %s", (time, self.cnt, callback, args))
-        heapq.heappush(self.q, (time, self.cnt, callback, args))
-#        print(self.q)
         self.cnt += 1
+        heapq.heappush(self.q, (time, self.cnt, callback, args))
+        return self.cnt
 
     def wait(self, delay):
         # Default wait implementation, to be overriden in subclasses
@@ -98,7 +99,7 @@ class EventLoop:
                             continue
                         elif isinstance(ret, BlockUntilDone):
                             # assume arg is a future
-                            arg.add_done_callback(self.future_callback_closure(cb))
+                            arg.add_unblocking_callback(self.future_callback_closure(cb))
                             continue
 
                         elif isinstance(ret, StopLoop):

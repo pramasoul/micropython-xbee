@@ -5,6 +5,7 @@ from uasyncio_core import get_event_loop, coroutine, \
     Sleep, StopLoop, GetRunningCoro, GetRunningLoop, BlockUntilDone, \
     async, Task # Deprecated
 
+import heapq
 import pyb
 import gc
 
@@ -50,6 +51,20 @@ class EventLoop(uac.EventLoop):
         uac.EventLoop.run_forever(self)
         self._led.off()
 
+    def unplan_call(self, h):
+        q = self.q
+        rv = 0
+        for i in range(len(q)):
+            try:
+                if q[i][1] is h:
+                    q[i] = (0,0)
+            except IndexError:
+                break
+        heapq.heapify(q)
+        while q[0] == (0,0):
+            heapq.heappop(q)
+            rv += 1
+        return rv
 
 def new_event_loop():
     return uac._event_loop_class()
@@ -112,6 +127,7 @@ class Future:
         self.loop = loop or get_event_loop()
         self.res = _sentinel
         self.cbs = []
+        self.ubcbs = []         # un-Block-ing callbacks
 
     def result(self):
         if self.res is _sentinel:
@@ -128,6 +144,15 @@ class Future:
         self.res = val
         for f in self.cbs:
             f(self)
+        for f in self.ubcbs:    # un-Block after the other callbacks
+            f(self)
+
+    def add_unblocking_callback(self, fn):
+        if self.res is _sentinel:
+            self.ubcbs.append(fn)
+        else:
+            # FIXME: is this correct?
+            self.loop.call_soon(fn, self)
 
     def done(self):
         return self.res is not _sentinel

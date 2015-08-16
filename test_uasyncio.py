@@ -8,10 +8,12 @@ from asyncio_4pyb import \
 
 from asyncio_4pyb import async, Task # deprecated functions
 
+#from heapq import heapify, heappop
 import logging
 import unittest
 
 import pyb
+
 
 _test_EventLoop = None
 
@@ -195,7 +197,7 @@ class CoroTestCase(unittest.TestCase):
         def counter(name, n, naptime):
             for i in range(n):
                 self.result += name
-                yield Sleep(naptime) 
+                yield Sleep(naptime)
 
         @async_test
         def master():
@@ -221,7 +223,7 @@ class CoroTestCase(unittest.TestCase):
         def counter(name, n, naptime):
             for i in range(n):
                 self.result += name
-                yield Sleep(naptime) 
+                yield Sleep(naptime)
 
         @async_test
         def master():
@@ -385,7 +387,7 @@ class CoroTestCase(unittest.TestCase):
             pq('at start')
             self.completer_task = async(completer(futures), loop=_test_EventLoop)
             pq('after starting completer task')
-            for i in range(100):
+            for i in range(20):
                 f = yield from enter(futures)
                 pq('post enter')
                 self.assertIsInstance(f, Future)
@@ -396,6 +398,39 @@ class CoroTestCase(unittest.TestCase):
 
         master()
         del(self.i)
+
+
+    def testRemoveQueuedCallback(self):
+        # loop.call_*() returns unique (for that loop) handle
+        # a not-yet-called queued call can be unplanned with unplan_call()
+        # unplan_call() returns a count of the number of planned calls elided
+        self.result = ''
+
+        @coroutine
+        def counter(name, n, naptime):
+            for i in range(n):
+                self.result += name
+                yield Sleep(naptime)
+
+        @async_test
+        def master():
+            self.result += 'M'
+            yield from counter('.', 3, 0.01)
+            h1 = self.loop.call_soon(counter('1', 10, 0.01))
+            self.result += 'M'
+            h2 = self.loop.call_later(0.03, counter('bad', 1, 0.01))
+            self.assertNotEqual(h1, h2)
+            yield Sleep(0.021)
+            self.assertEqual(self.loop.unplan_call(h2), 1)
+            self.assertEqual(self.loop.unplan_call(h1), 0)
+            yield Sleep(0.019)
+            self.result += 'M'
+
+        master()
+        self.assertEqual(self.result, 'M...M11111M') # no bad
+        del(self.result)
+
+
 
     @unittest.skip("wait_for timeout not implemented")
     @async_test
