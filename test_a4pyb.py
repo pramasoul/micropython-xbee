@@ -435,43 +435,124 @@ class CoroTestCase(unittest.TestCase):
 
 
 
-    @unittest.skip("wait_for timeout on coro not implemented")
-    @async_test
-    def test_wait_for_timeout_A(self):
-        with self.assertRaises(TimeoutError):
-            yield from wait_for(sleep(0.1, loop=self.loop), 0, loop=self.loop)
-        yield from wait_for(sleep(0.1, loop=self.loop), 0.12, loop=self.loop)
-
-
-    @async_test
-    def test_wait_for_timeout_B(self):
-
-        t0 = pyb.millis()
-        log.debug("Now %f", self.loop.time())
-        with self.assertRaises(TimeoutError):
-            v = yield from wait_for(Future(loop=self.loop), 0.05, loop=self.loop)
-        et = pyb.elapsed_millis(t0)
-
-
-    @unittest.skip("wait_for(coro) timeout not implemented")
-    def test_wait_for_timeout_C(self):
-        logging.basicConfig(level=logging.DEBUG)
-        
-        @coroutine
-        def coro1():
-            yield
+    @unittest.skip("broken test")
+    def testBlockUntilDone(self):
+        # BlockUntilDone SysCall works as demonstrated
 
         @coroutine
-        def coro2():
-            yield from coro1()
-            return Future(loop=self.loop)
+        def waitToReturn(duration, statement, fut):
+            yield from sleep(duration)
+            fut.set_result(statement)
 
         @async_test
         def master():
+            fut = Future()
+            co = waitToReturn(0.01, 'cows', fut)
+            v_co = yield co
+            v_bud = yield BlockUntilDone(co, None)
+            self.assertEqual(v_bud, 'cows')
+
+        master()
+        
+
+    @async_test
+    def testWaitForCoroutine(self):
+        with self.assertRaises(TimeoutError):
+            yield from wait_for(sleep(0.1, loop=self.loop), 0.001, loop=self.loop)
+        with self.assertRaises(TimeoutError):
+            yield from wait_for(sleep(0.1, loop=self.loop), 0, loop=self.loop)
+        yield from wait_for(sleep(0.01, loop=self.loop), 0.012, loop=self.loop)
+
+
+    @async_test
+    def testWaitForFutureTimeout(self):
+        t0 = pyb.millis()
+        with self.assertRaises(TimeoutError):
+            v = yield from wait_for(Future(loop=self.loop), 0.05, loop=self.loop)
+        et = pyb.elapsed_millis(t0)
+        self.assertTrue(50 <= et < 55, 'et was %rms (expected 50ms)' % et)
+
+
+    def testWFC(self):
+
+        @coroutine
+        def w(coro, fut):
+            v = yield from coro
+            fut.set_result(v)
+            return v
+
+        @coroutine
+        def x(duration, statement):
+            yield from sleep(duration)
+            return statement
+
+        @async_test
+        def master():
+            fut = Future()
+            self.assertEqual((yield from x(0.01, 'happy')), 'happy')
+            self.assertEqual((yield from w(x(0.01, 'pleased'), fut)), 'pleased')
+            self.assertEqual(fut.result(), 'pleased')
+            #logging.basicConfig(level=logging.DEBUG)
+            #log.debug("Now %f", self.loop.time())
+
+            # One that completes before the timeout
+            t0 = pyb.millis()
+            fut = Future()
+            self.loop.call_soon(w(x(0.02, 'good'), fut))
+            v = yield from wait_for(fut, 0.05)
+            self.assertEqual(v, 'good')
+            et = pyb.elapsed_millis(t0)
+            self.assertTrue(20 <= et < 25, 'et was %rms (expected 20-25ms)' % et)
+            
+            # One that hits the timeout
+            t0 = pyb.millis()
+            fut = Future()
+            self.loop.call_soon(w(x(0.02, 'fine'), fut))
             with self.assertRaises(TimeoutError):
-                yield from wait_for(coro1(), 0.01, loop=self.loop)
-            with self.assertRaises(TimeoutError):
-                yield from wait_for(coro1(), 0.1, loop=self.loop)
+                v = yield from wait_for(fut, 0.01)
+            et = pyb.elapsed_millis(t0)            
+            self.assertTrue(10 <= et < 15, 'et was %rms (expected 10-15ms)' % et)
+
+        master()
+
+
+    def testMessWithGetRunningCoro(self):
+
+        @coroutine
+        def coro(me, duration):
+            yield Sleep(duration)
+            self.loop.call_soon(me, 'coro-scheduled')
+            #print('coro returning')
+            return 'from coro'
+
+        @async_test
+        def master():
+            t0 = pyb.millis()
+            fut = Future()
+            me = yield GetRunningCoro(None)
+            self.assertEqual(self.loop.q, []) # nobody in the queue
+            yield from sleep(0.001)
+            self.assertEqual(self.loop.q, []) # nobody in the queue
+            v_coro = yield coro(me, 0.01) # starts
+            self.assertEqual(len(self.loop.q), 1) # coro is queued
+            v_sleep = yield Sleep(0.02)
+            et = pyb.elapsed_millis(t0)            
+            # We got send()'ed to when the coro finished, before the Sleep
+            self.assertTrue(10 <= et < 15, 'et was %rms' % et)
+            self.assertEqual(v_sleep, 'coro-scheduled')
+
+            # But we have an extra call to us in the queue, left over from our yield coro
+            #Fails: self.assertEqual(self.loop.q, []) # nobody in the queue
+            #print("loop.q is", self.loop.q)
+
+            #print("v_coro = %r, v_sleep = %r" % (v_coro, v_sleep))
+            #print("Another yield returns", (yield))
+            #print("A Sleep(0.025) yield returns", (yield Sleep(0.025)))
+            #print("Another yield returns", (yield))
+            
+        master()
+
+
 
 
     def testYieldFromPassthru(self):
@@ -516,7 +597,6 @@ class CoroTestCase(unittest.TestCase):
         self.assertEqual( (yield from retRightAway(7)) , 7)
         self.assertEqual(delany(retRightAway(7)), 7)
         self.assertEqual(yar(delany(retRightAway(7))), ([], 7))
-
 
 
 if __name__ == '__main__':

@@ -65,7 +65,7 @@ class EventLoop(uac.EventLoop):
             except IndexError:
                 break
         heapq.heapify(q)
-        while q[0] == (0,0):
+        while q and q[0] == (0,0):
             heapq.heappop(q)
             rv += 1
         return rv
@@ -93,11 +93,27 @@ def sleep(secs, loop=None):
 def wait_for(fut_or_coro, timeout=None, *, loop=None):
     # FIXME: deal with coro timeout
     # FIXME: deal with loop
+    loop = loop or get_event_loop()
+
+    @coroutine
+    def _wait(coro, fut):
+        #print("x starting")
+        v = yield from coro
+        #fut.done((yield from coro)) BUG: not "done()", "set_result()"
+        #print("x got v from coro")
+        fut.set_result(v)
 
     if isinstance(fut_or_coro, uac.type_gen):
+        #logging.basicConfig(level=logging.DEBUG)
         coro = fut_or_coro
-        if timeout is not None and timeout != 0:
-            raise NotImplementedError("wait_for(coro, timeout) unimplemented for nonzero timeout")
+        if timeout is not None:
+            #raise NotImplementedError("wait_for(coro, timeout) unimplemented for nonzero timeout")
+            fut = Future()
+            #print("calling loop.call_soon(%r, %r, %r)" % (x, coro, fut))
+            #loop.call_soon(x, coro, fut) # FIXME: This can't be right (and it's not)
+            yield _wait(coro, fut)
+            return (yield from wait_for(fut, timeout))
+
         return (yield from coro)
 
     if isinstance(fut_or_coro, Future):
@@ -111,7 +127,8 @@ def wait_for(fut_or_coro, timeout=None, *, loop=None):
         # The clever way, with no burn while waiting
         if not fut.done():
             v = yield BlockUntilDone(fut, timeout)
-            log.debug("BlockUntilDone(%r, %r) yielded %r", fut, timeout, v)
+            if __debug__:
+                log.debug("BlockUntilDone(%r, %r) yielded %r", fut, timeout, v)
             if isinstance(v, Exception):
                 raise v
             #assert fut.done()

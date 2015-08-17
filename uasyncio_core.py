@@ -102,17 +102,26 @@ class EventLoop:
                             #continue
                             args = [self]
                         elif isinstance(ret, BlockUntilDone):
-                            # assume arg is a future
-                            h = 0
                             if __debug__:
                                 log.debug('BlockUntilDone(%s)', repr(ret.args))
                             handle = None
-                            fut = ret.args[0]
-                            if len(ret.args) > 1:
-                                timeout = ret.args[1]
-                                if timeout and timeout > 0:
-                                    handle = self.call_later(timeout, self.future_timeout_closure(cb, fut))
-                            arg.add_unblocking_callback(self.future_callback_closure(cb, handle))
+                            if isinstance(ret.args[0], type_gen):
+                                coro = ret.args[0]
+                                if len(ret.args) > 1:
+                                    timeout = ret.args[1]
+                                    if timeout and timeout > 0:
+                                        pass
+                                pass
+                            else:
+                                # assume a Future instance
+                                assert hasattr(ret.args[0], 'clear_unblocking_callbacks')
+                                fut = ret.args[0]
+                                if len(ret.args) > 1:
+                                    timeout = ret.args[1]
+                                    #if timeout and timeout > 0:
+                                    if timeout is not None:
+                                        handle = self.call_later(timeout, self.future_timeout_closure(cb, fut))
+                                arg.add_unblocking_callback(self.future_callback_closure(cb, handle))
                             continue
                         # end EXPERIMENTAL
 
