@@ -94,34 +94,24 @@ class EventLoop:
 
                         # EXPERIMENTAL
                         elif isinstance(ret, GetRunningCoro):
-                            #self.call_soon(cb, cb)
-                            #continue
                             args = [cb]
                         elif isinstance(ret, GetRunningLoop):
-                            #self.call_soon(cb, self)
-                            #continue
                             args = [self]
                         elif isinstance(ret, BlockUntilDone):
                             if __debug__:
                                 log.debug('BlockUntilDone(%s)', repr(ret.args))
+                            if not hasattr(ret.args[0], 'clear_unblocking_callbacks'):
+                                raise NotImplementedError("BlockUntilDone only on a future")
                             handle = None
-                            if isinstance(ret.args[0], type_gen):
-                                coro = ret.args[0]
-                                if len(ret.args) > 1:
-                                    timeout = ret.args[1]
-                                    if timeout and timeout > 0:
-                                        pass
-                                pass
-                            else:
-                                # assume a Future instance
-                                assert hasattr(ret.args[0], 'clear_unblocking_callbacks')
-                                fut = ret.args[0]
-                                if len(ret.args) > 1:
-                                    timeout = ret.args[1]
-                                    #if timeout and timeout > 0:
-                                    if timeout is not None:
-                                        handle = self.call_later(timeout, self.future_timeout_closure(cb, fut))
-                                arg.add_unblocking_callback(self.future_callback_closure(cb, handle))
+                            # assume a Future instance
+                            assert hasattr(ret.args[0], 'clear_unblocking_callbacks')
+                            fut = ret.args[0]
+                            if len(ret.args) > 1:
+                                timeout = ret.args[1]
+                                #if timeout and timeout > 0:
+                                if timeout is not None:
+                                    handle = self.call_later(timeout, self.future_timeout_closure(cb, fut))
+                            arg.add_unblocking_callback(self.future_callback_closure(cb, handle))
                             continue
                         # end EXPERIMENTAL
 

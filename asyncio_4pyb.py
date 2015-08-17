@@ -56,6 +56,7 @@ class EventLoop(uac.EventLoop):
         self._led.off()
 
     def unplan_call(self, h):
+        # remove a call from the queue
         q = self.q
         rv = 0
         for i in range(len(q)):
@@ -91,35 +92,26 @@ def sleep(secs, loop=None):
     
 
 def wait_for(fut_or_coro, timeout=None, *, loop=None):
-    # FIXME: deal with coro timeout
     # FIXME: deal with loop
     loop = loop or get_event_loop()
 
     @coroutine
     def _wait(coro, fut):
-        #print("x starting")
-        v = yield from coro
-        #fut.done((yield from coro)) BUG: not "done()", "set_result()"
-        #print("x got v from coro")
-        fut.set_result(v)
+        fut.set_result((yield from coro))
 
     if isinstance(fut_or_coro, uac.type_gen):
         #logging.basicConfig(level=logging.DEBUG)
         coro = fut_or_coro
         if timeout is not None:
-            #raise NotImplementedError("wait_for(coro, timeout) unimplemented for nonzero timeout")
             fut = Future()
-            #print("calling loop.call_soon(%r, %r, %r)" % (x, coro, fut))
-            #loop.call_soon(x, coro, fut) # FIXME: This can't be right (and it's not)
             yield _wait(coro, fut)
             return (yield from wait_for(fut, timeout))
-
         return (yield from coro)
 
     if isinstance(fut_or_coro, Future):
         fut = fut_or_coro       # for clairity in this code
 
-        # The slow & simple way: spin on it.
+        # The slow & simple way: spin on it. Also needs timeout.
         #while not fut.done():
         #    yield
         #return fut.result()
@@ -186,7 +178,6 @@ class Future:
     def done(self):
         return self.res is not _sentinel
 
-    # FIXME: is this right for uasyncio?
     def __iter__(self):
         if self.res is _sentinel:
             yield self
