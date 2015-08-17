@@ -94,15 +94,18 @@ class EventLoop:
 
                         # EXPERIMENTAL
                         elif isinstance(ret, GetRunningCoro):
-                            self.call_soon(cb, cb)
-                            continue
+                            #self.call_soon(cb, cb)
+                            #continue
+                            args = [cb]
                         elif isinstance(ret, GetRunningLoop):
-                            self.call_soon(cb, self)
-                            continue
+                            #self.call_soon(cb, self)
+                            #continue
+                            args = [self]
                         elif isinstance(ret, BlockUntilDone):
                             # assume arg is a future
                             h = 0
-                            log.debug('BlockUntilDone(%s)', repr(ret.args))
+                            if __debug__:
+                                log.debug('BlockUntilDone(%s)', repr(ret.args))
                             handle = None
                             fut = ret.args[0]
                             if len(ret.args) > 1:
@@ -142,18 +145,22 @@ class EventLoop:
         def fcb(fut):
             if handle and handle > 0:
                 self.unplan_call(handle)
-                log.debug("fcb(%r) unplan_call(%r)" % (fut, handle))
+                if __debug__:
+                    log.debug("fcb(%r) unplan_call(%r)" % (fut, handle))
             self.call_soon(cb, fut)
-        log.debug("future_callback_closure(%r, %r) returning %r" % (cb, handle, fcb))
+        if __debug__:
+            log.debug("future_callback_closure(%r, %r) returning %r" % (cb, handle, fcb))
         return fcb
 
     def future_timeout_closure(self, cb, fut):
         def ftc():
             fut.clear_unblocking_callbacks()
-            log.debug("ftc(%r) clear_unblocking_callbacks" % fut)
+            if __debug__:
+                log.debug("ftc(%r) clear_unblocking_callbacks" % fut)
             self.call_soon(cb, TimeoutError()) # FIXME
             #FIXME: ?? raise TimeoutError
-        log.debug("future_timeout_closure(%r) returning %r" % (fut, ftc))
+        if __debug__:
+            log.debug("future_timeout_closure(%r) returning %r" % (fut, ftc))
         return ftc
 
 class SysCall:
