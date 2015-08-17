@@ -3,11 +3,15 @@
 import uasyncio_core as uac
 from uasyncio_core import get_event_loop, coroutine, \
     Sleep, StopLoop, GetRunningCoro, GetRunningLoop, BlockUntilDone, \
+    TimeoutError, \
     async, Task # Deprecated
 
 import heapq
+import logging
 import pyb
 import gc
+
+log = logging.getLogger("4pyb")
 
 
 #red_led = pyb.LED(1)
@@ -87,25 +91,30 @@ def sleep(secs, loop=None):
     
 
 def wait_for(fut_or_coro, timeout=None, *, loop=None):
-    # FIXME: deal with timeout
+    # FIXME: deal with coro timeout
     # FIXME: deal with loop
 
     if isinstance(fut_or_coro, uac.type_gen):
         coro = fut_or_coro
+        if timeout is not None and timeout != 0:
+            raise NotImplementedError("wait_for(coro, timeout) unimplemented for nonzero timeout")
         return (yield from coro)
 
     if isinstance(fut_or_coro, Future):
         fut = fut_or_coro       # for clairity in this code
 
-        # The slow & simple way: pin on it.
+        # The slow & simple way: spin on it.
         #while not fut.done():
         #    yield
         #return fut.result()
 
         # The clever way, with no burn while waiting
         if not fut.done():
-            yield BlockUntilDone(fut)
-            assert fut.done()
+            v = yield BlockUntilDone(fut, timeout)
+            log.debug("BlockUntilDone(%r, %r) yielded %r", fut, timeout, v)
+            if isinstance(v, Exception):
+                raise v
+            #assert fut.done()
         return (yield from fut)
 
 
@@ -153,6 +162,9 @@ class Future:
         else:
             # FIXME: is this correct?
             self.loop.call_soon(fn, self)
+
+    def clear_unblocking_callbacks(self):
+        self.ubcbs = []
 
     def done(self):
         return self.res is not _sentinel

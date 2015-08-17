@@ -6,10 +6,12 @@ import uheapq as heapq
 import logging
 
 
-log = logging.getLogger("asyncio")
+log = logging.getLogger("uasyncio_core")
 
 type_gen = type((lambda: (yield))())
 
+class TimeoutError(Exception):
+    pass
 
 class EventLoop:
 
@@ -99,8 +101,17 @@ class EventLoop:
                             continue
                         elif isinstance(ret, BlockUntilDone):
                             # assume arg is a future
-                            arg.add_unblocking_callback(self.future_callback_closure(cb))
+                            h = 0
+                            log.debug('BlockUntilDone(%s)', repr(ret.args))
+                            handle = None
+                            fut = ret.args[0]
+                            if len(ret.args) > 1:
+                                timeout = ret.args[1]
+                                if timeout and timeout > 0:
+                                    handle = self.call_later(timeout, self.future_timeout_closure(cb, fut))
+                            arg.add_unblocking_callback(self.future_callback_closure(cb, handle))
                             continue
+                        # end EXPERIMENTAL
 
                         elif isinstance(ret, StopLoop):
                             return arg
@@ -127,11 +138,23 @@ class EventLoop:
     def close(self):
         pass
 
-    def future_callback_closure(self, cb):
+    def future_callback_closure(self, cb, handle):
         def fcb(fut):
+            if handle and handle > 0:
+                self.unplan_call(handle)
+                log.debug("fcb(%r) unplan_call(%r)" % (fut, handle))
             self.call_soon(cb, fut)
+        log.debug("future_callback_closure(%r, %r) returning %r" % (cb, handle, fcb))
         return fcb
 
+    def future_timeout_closure(self, cb, fut):
+        def ftc():
+            fut.clear_unblocking_callbacks()
+            log.debug("ftc(%r) clear_unblocking_callbacks" % fut)
+            self.call_soon(cb, TimeoutError()) # FIXME
+            #FIXME: ?? raise TimeoutError
+        log.debug("future_timeout_closure(%r) returning %r" % (fut, ftc))
+        return ftc
 
 class SysCall:
 

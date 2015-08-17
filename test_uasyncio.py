@@ -4,7 +4,9 @@ from asyncio_4pyb import \
     EventLoop, new_event_loop, get_event_loop, set_event_loop, \
     coroutine, sleep, wait_for, \
     Sleep, StopLoop, GetRunningCoro, GetRunningLoop, BlockUntilDone, \
-    Future
+    Future, \
+    TimeoutError
+
 
 from asyncio_4pyb import async, Task # deprecated functions
 
@@ -14,6 +16,7 @@ import unittest
 
 import pyb
 
+log = logging.getLogger("test")
 
 _test_EventLoop = None
 
@@ -423,16 +426,16 @@ class CoroTestCase(unittest.TestCase):
             yield Sleep(0.021)
             self.assertEqual(self.loop.unplan_call(h2), 1)
             self.assertEqual(self.loop.unplan_call(h1), 0)
-            yield Sleep(0.019)
+            yield Sleep(0.015)
             self.result += 'M'
 
         master()
-        self.assertEqual(self.result, 'M...M11111M') # no bad
+        self.assertEqual(self.result, 'M...M1111M') # no bad
         del(self.result)
 
 
 
-    @unittest.skip("wait_for timeout not implemented")
+    @unittest.skip("wait_for timeout on coro not implemented")
     @async_test
     def test_wait_for_timeout_A(self):
         with self.assertRaises(TimeoutError):
@@ -440,18 +443,19 @@ class CoroTestCase(unittest.TestCase):
         yield from wait_for(sleep(0.1, loop=self.loop), 0.12, loop=self.loop)
 
 
-    @unittest.skip("wait_for timeout not implemented")
     @async_test
     def test_wait_for_timeout_B(self):
 
         t0 = pyb.millis()
+        log.debug("Now %f", self.loop.time())
         with self.assertRaises(TimeoutError):
             v = yield from wait_for(Future(loop=self.loop), 0.05, loop=self.loop)
         et = pyb.elapsed_millis(t0)
 
 
-    @unittest.skip("wait_for timeout not implemented")
+    @unittest.skip("wait_for(coro) timeout not implemented")
     def test_wait_for_timeout_C(self):
+        logging.basicConfig(level=logging.DEBUG)
         
         @coroutine
         def coro1():

@@ -37,6 +37,10 @@ as a StopIteration by the send()'er, run_forever()).
 ** A StopLoop is a SysCall, which causes the run_forever() to return,
    with the first arg as its return value.
 
+** A BlockUntilDone is a SysCall, with a Future and an optional
+   timeout. It does not reschedule the coroutine until the future
+   completes or the timeout happens. More about it below.
+
 * A yielded coroutine gets scheduled to be called soon (in addition
   to, and before, this one).
 
@@ -58,3 +62,67 @@ one-second resolution. The 4pyb version overrides it with
 pyb.elapsed_millis() from the time of import, giving millisecond
 resolution.
 
+
+Future, wait_for(), and BlockUntilDone
+======================================
+
+https://docs.python.org/3/library/asyncio-task.html describes
+
+wait_for(fut, timeout, *, loop=None)
+
+This function is a coroutine, usage:
+    result = yield from asyncio.wait_for(fut, 60.0)
+
+wait_for() is implemented in asyncio_4pyb as a function.
+
+FIXME maybe: It doesn't handle nonzero timeout for coro's yet.
+
+wait_for() depends on the BlockUntilDone SysCall, which waits until
+the future is done or the timeout happens.
+
+There are some subtleties involved in BlockUntilDone.  When the loop
+receives a BlockUntilDone SysCall from a coro, it adds a callback to
+the future to continue the loop by calling the loop's call_soon() on
+the coro when the future is satisfied. That callback is a closure, in
+order to contain the coro to be continued. The loop's
+future_callback_closure() function creates these callback functions.
+
+BlockUntilDone has to be able to cancel that callback in the future if
+the timeout happens instead. Future provides the
+add_unblocking_callback() method to receive the callback, and the
+clear_unblocking_callbacks() method to forget all the unblocking
+callbacks.
+
+BlockUntilDone implements an optional timeout by using call_later() to
+schedule a function that will run after the timeout interval. That
+timeout function can't simply be the delayed next turn of the coro,
+because the timeout has to clear the function completion unblocking
+callback so that it doesn't also reschedule the coro. So the
+BlockUntilDone processing schedules the delayed execution of a
+closure, as created by the loop's future_timeout_closure()
+function. That closure clears the subject future's unblocking
+callbacks, and then schedules the coro's next turn.
+
+It provides an instance of TimeoutError as the argument that will be
+send()'ed to the coro, to indicate the timeout happened. The
+wait_for() checks what it gets yielded by BlockUntilDone; if it is an
+Exception instance it raises it. That propagates to the coro that did
+the yield from wait_for().
+
+And that scheduled timeout closure two paragraphs ago has to be
+eliminated if the future does complete before the timeout. So after
+BlockUntilDone schedules the timeout it passes the handle it received
+from the call_later() call, to future_callback_closure() so that it
+can be included in the unblocking callback closure. That closure, when
+called by the future processing its unblocking callbacks upon
+completion, removes the scheduled timeout call by passing the handle
+to unplan_call().
+
+
+When a future completes, it is by it's set_result() method being
+called. That records the result and calls all the regular callbacks in
+the order they were registered by add_done_callback(). After those, it
+calls all the unblocking callbacks (of which there presently may be
+only zero or one) in the order they were registred by
+add_unblocking_callback(). A future's clear_unblocking_callbacks()
+discards any existing unblocking callbacks.
