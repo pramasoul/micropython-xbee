@@ -461,7 +461,15 @@ class CoroTestCase(unittest.TestCase):
             yield from wait_for(sleep(0.1, loop=self.loop), 0.001, loop=self.loop)
         with self.assertRaises(TimeoutError):
             yield from wait_for(sleep(0.1, loop=self.loop), 0, loop=self.loop)
-        yield from wait_for(sleep(0.01, loop=self.loop), 0.012, loop=self.loop)
+
+        yield from wait_for(sleep(0.01, loop=self.loop), 0.01, loop=self.loop)
+
+        # Note there's a little grace period for the timeout:
+        yield from wait_for(sleep(0.01, loop=self.loop), 0.009, loop=self.loop)
+        yield from wait_for(sleep(0.01, loop=self.loop), 0.008, loop=self.loop)
+        with self.assertRaises(TimeoutError):
+            yield from wait_for(sleep(0.01, loop=self.loop), 0.007, loop=self.loop)
+        return
 
 
     @async_test
