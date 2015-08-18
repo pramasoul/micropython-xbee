@@ -1,21 +1,18 @@
 """Test for asyncio-based XBee Pro S3B library"""
 
-from asyncio_4pyb import \
-    EventLoop, new_event_loop, get_event_loop, set_event_loop, \
-    coroutine, sleep, \
-    Sleep, StopLoop, \
-    Future
-
-
 import logging
 import unittest
-import pyb
 
 #from ubinascii import hexlify
 
+from asyncio_4pyb import new_event_loop, set_event_loop, get_event_loop, \
+    EventLoop
+
+from async_xbradio import Future, TimeoutError, \
+    coroutine, sleep, wait_for
+
 from async_xbradio import XBRadio, \
     FrameOverrunError, FrameWaitTimeout
-
 
 from pyb import SPI, Pin, info, millis, elapsed_millis, micros, elapsed_micros
 
@@ -184,11 +181,23 @@ class RadioTestCase(unittest.TestCase):
         xb = self.xb
         yield from xb.start()
         self.assertEqual(xb.rx_available(), 0)
+        t0 = self.loop.time()
+        txrv = yield from xb.tx('bar1', 'thisisanaddress!')
+        self.assertIsInstance(txrv, Future)
+        self.assertFalse(txrv.done())
+        v = yield from wait_for(txrv)
+        t1 = self.loop.time()
+        print(v)
+        print(t1-t0)
+        return
+
         v = yield from wait_for(xb.tx('bar1', 'thisisanaddress!'), 4)
         print("1:", v)
         f = yield from xb.tx('bar2', 'thisisanaddress!')
         self.assertIsInstance(f, Future)
-        v = yield from wait_for(f, 4)
+        with self.assertRaises(TimeoutError):
+            v = yield from wait_for(f, 4)
+
         print("2:", v)
 
 
@@ -198,7 +207,7 @@ class RadioTestCase(unittest.TestCase):
             v = yield from wait_for(f, 0.1)
             print("3:", v)
 
-        t0 = pyb.millis()
+        t0 = millis()
         with self.assertRaises(TimeoutError):
             v = yield from wait_for(xb.tx('bar4', 'thisisanaddress!'), 0.1)
             print("4:", v)
@@ -210,16 +219,21 @@ class RadioTestCase(unittest.TestCase):
         yield from sleep(3)
         self.assertEqual(xb.rx_available(), 0)
 
+
+    @unittest.skip('x')
     @async_test
     def testTxAndWaitOnStatus(self):
         #logging.basicConfig(logging.DEBUG)
         #print("0: q =", self.loop.q)
         xb = self.xb
         yield from xb.start()
+
         #print("frame_wait: ", list((i,v) for i,v in enumerate(xb.frame_wait) if v))
         #print("1: q =", self.loop.q)
-        f0 = yield from xb.tx('foo', xb.address)
+        f0 = yield from xb.tx('foo', xb.address) # send to self
         #print("2: q =", self.loop.q)
+        #print(repr(Future))
+
         self.assertIsInstance(f0, Future)
         self.assertFalse(f0.done())
         #print("frame_wait: ", list((i,v) for i,v in enumerate(xb.frame_wait) if v))
@@ -237,7 +251,8 @@ class RadioTestCase(unittest.TestCase):
         self.assertIsInstance(f1, Future)
         self.assertIsNot(f1, f0)
         result_1 = yield from wait_for(f1, None)
-        self.assertTrue(3 < elapsed_millis(t1) < 7)
+        d1 = elapsed_millis(t1)
+        self.assertTrue(3 < d1 < 10, "took %dms" % d1)
         #print(elapsed_millis(t1))
         self.assertEqual(result_1, bytes(3))
         a, d = yield from xb.rx()
@@ -247,17 +262,6 @@ class RadioTestCase(unittest.TestCase):
         self.assertEqual(a, xb.address)
         self.assertEqual(d, b'bar')
         self.assertEqual(xb.rx_available(), 0)
-
-
-    def testZ(self):
-        #logging.basicConfig(logging.DEBUG)
-
-        @coroutine
-        def fun(t):
-            yield from sleep(t)
-
-        tasks = [async(fun(0.01))]
-        self.loop.run_until_complete(wait(tasks))
 
 
     @unittest.skip("obsolete")
@@ -331,5 +335,9 @@ SPI_CLK (pin 18)	X6	Y6
 SPI_nATTN (pin 19)	Y10	Y4 (not X10)
 """)
 
-if __name__ == '__main__':
+def main():
     unittest.main()
+
+
+if __name__ == '__main__':
+    main()

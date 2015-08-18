@@ -1,13 +1,7 @@
 """asyncio-based XBRadio"""
 
-from asyncio_4pyb import \
-    EventLoop, new_event_loop, get_event_loop, set_event_loop, \
-    coroutine, sleep, \
-    Sleep, StopLoop
-
-from asyncio_4pyb import Future
-
-from asyncio_4pyb import async, Task # deprecated functions
+from asyncio_4pyb import Future, TimeoutError, \
+    coroutine, sleep, wait_for
 
 import logging
 
@@ -311,6 +305,7 @@ class XBRadio:
     @coroutine
     def start(self):
         t0 = millis()
+        self.address = bytes(8) # zero it out
         yield from self.xcvr.hard_reset()
         while True:
             b = yield from self.xcvr.get_frame(100)
