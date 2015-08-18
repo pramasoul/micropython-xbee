@@ -3,7 +3,7 @@
 import logging
 import unittest
 
-#from ubinascii import hexlify
+from ubinascii import hexlify
 
 from asyncio_4pyb import new_event_loop, set_event_loop, get_event_loop, \
     EventLoop
@@ -37,10 +37,10 @@ class CoroTestCase(unittest.TestCase):
     def setUp(self):
         global _test_EventLoop
         #print('(setUp', end='')
-        #was_loop = _def_event_loop
+        was_loop = _test_EventLoop
         self.loop = new_event_loop()
         _test_EventLoop = self.loop
-        #assert self.loop is not was_loop
+        assert self.loop is not was_loop
 
         #XBRadio uses default loop:
         set_event_loop(self.loop)
@@ -57,6 +57,7 @@ class CoroTestCase(unittest.TestCase):
 
     @async_test
     def testWrap(self):
+        # Tests that the async_test wrapper works
         v = 1
         yield from sleep(0.1)
         v = 2
@@ -81,52 +82,46 @@ class RadioTestCase(unittest.TestCase):
         pass
 
     def testIsRadio(self):
+        # We have a radio object
         self.assertIsInstance(self.xb, XBRadio)
 
     @async_test
     def testSleep(self):
+        # sleep() does not freeze
         yield from sleep(0.01)
 
     @async_test
     def testStartRadio(self):
-        #logging.basicConfig(logging.DEBUG)
+        # The radio can be started
         yield from self.xb.start()
-        #pyb.LED(1).on()
         self.assertTrue(self.xb.started)
 
     @async_test
     def testAddress(self):
-        #print("pre-start: ", self.loop, self.loop.q)
-        #logging.basicConfig(logging.DEBUG)
+        # When started, the radio has an address
         yield from self.xb.start()
         self.assertIsInstance(self.xb.address, bytes)
         self.assertNotEqual(sum(self.xb.address), 0)
-        #print(self.loop, self.loop.q)
 
-    @unittest.skip("x")
     @async_test
     def testATcmds(self):
+        # AT commands work
         xb = self.xb
         yield from xb.start()
-        at = xb.send_AT_cmd
-        t1 = yield from at('TP')
-        print("send_AT_cmd yielded", t1)
-        yield from at('%V')
-        yield from sleep(0.01)
-        self.assertTrue(1 < xb.values['TP'] < 60, "bad temperature %d" % xb.values['TP'])
-        self.assertTrue(3200 < xb.values['%V'] < 3400, "bad voltage %d" % xb.values['%V'])
+        temp = yield from xb.AT_cmd('TP')
+        self.assertTrue(1 < temp < 60, "bad temperature %d" % temp)
+        voltage = yield from xb.AT_cmd('%V')
+        self.assertTrue(3200 < voltage < 3400, "bad voltage %d" % voltage)
 
 
-        
-    @unittest.skip("incomplete")
     @async_test
     def testRxErrorCount(self):
         xb = self.xb
         yield from xb.start()
-        at = xb.send_AT_cmd
-        yield from at('ER')
+        error_count = yield from xb.AT_cmd('ER')
+        self.assertEqual(error_count, 0)
+        
 
-    @unittest.skip("x")
     @async_test
     def testGetFrameTimeout(self):
         xb = self.xb
@@ -137,10 +132,9 @@ class RadioTestCase(unittest.TestCase):
         with self.assertRaises(FrameWaitTimeout):
             yield from xb.xcvr.get_frame(34)
         et = elapsed_millis(t0)
-        self.assertTrue(34 <= et < 38, "took %dms (expected 34ms)" % et)
+        self.assertTrue(34 <= et < 40, "took %dms (expected 34ms)" % et)
 
 
-    @unittest.skip("x")
     @async_test
     def testSendToSelf(self):
         #logging.basicConfig(logging.DEBUG)
@@ -163,14 +157,13 @@ class RadioTestCase(unittest.TestCase):
         self.assertEqual(xb.rx_available(), 0)
 
 
-    @unittest.skip("x")
     @async_test
     def testSendToSelfNoWaiting(self):
         xb = self.xb
         yield from xb.start()
         self.assertEqual(xb.rx_available(), 0)
-        yield from xb.tx('foo', xb.address)
-        yield from xb.tx('bar', xb.address)
+        yield from wait_for((yield from xb.tx('foo', xb.address)), 0.1)
+        yield from wait_for((yield from xb.tx('bar', xb.address)), 0.1)
         a, d = yield from xb.rx()
         self.assertEqual(a, xb.address)
         self.assertEqual(d, b'foo')
@@ -179,8 +172,7 @@ class RadioTestCase(unittest.TestCase):
         self.assertEqual(d, b'bar')
 
 
-    @unittest.skip("x")
-    #@unittest.skip('takes 3 seconds')
+    @unittest.skip('takes 10 seconds')
     @async_test
     def testSendToNonExistentAddress(self):
         print("this takes about 10 seconds: ", end='')
@@ -236,7 +228,6 @@ class RadioTestCase(unittest.TestCase):
         self.assertEqual(xb.rx_available(), 0)
 
 
-    @unittest.skip('x')
     @async_test
     def testTxAndWaitOnStatus(self):
         #logging.basicConfig(logging.DEBUG)
@@ -268,7 +259,7 @@ class RadioTestCase(unittest.TestCase):
         self.assertIsNot(f1, f0)
         result_1 = yield from wait_for(f1, None)
         d1 = elapsed_millis(t1)
-        self.assertTrue(3 < d1 < 10, "took %dms" % d1)
+        self.assertTrue(3 < d1 < 12, "took %dms" % d1)
         #print(elapsed_millis(t1))
         self.assertEqual(result_1, bytes(3))
         a, d = yield from xb.rx()
@@ -307,8 +298,17 @@ class RadioTestCase(unittest.TestCase):
         #print("tasks is %r" % tasks)
         self.loop.run_until_complete(wait(tasks))
 
+    @async_test
+    def testInfo(self):
+        # Can get various info
+        xb = self.xb
+        yield from xb.start()
+        print("\nVersion %s, hardware %d, firmware %d" % \
+              ((yield from xb.AT_cmd('VL')),
+               (yield from xb.AT_cmd('HV')),
+               (yield from xb.AT_cmd('VR'))))
+        print("Address %s" % str(hexlify(xb.address), 'ASCII'))
 
-    
 
 def gse():
     test_as(create_test_radio('gse'))

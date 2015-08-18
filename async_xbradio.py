@@ -265,7 +265,7 @@ class XBRHAL:
 
 class XBRadio:
     #atplzero = b'\x08\x03PL\x00'
-    int_AT = set('DB,TP,%V,PL'.split(',')) # AT commands that have integer responses
+    int_AT = set('%V,DB,ER,GD,HV,ID,PL,TP,VR'.split(',')) # AT commands that have integer responses
     str_AT = set('NI,VL'.split(',')) # AT commands that have string responses
 
     def __init__(self, spi, nRESET, DOUT, nSSEL, nATTN):
@@ -287,28 +287,20 @@ class XBRadio:
         # 0x95 Node Identification Indicator (AO=0)
         # 0x97 Remote Command Response
 
-        self.frame_dispatch = { 0x88: self.try_to_consume_AT_response,
+        self.frame_dispatch = { 0x88: self.consume_AT_response,
                                 0x8a: self.consume_modem_status,
                                 0x8b: self.consume_transmit_status,
                                 0x90: self.consume_rx
         }
         
-        # FIXME: delete
-        self.AT_response_dispatch = { 'SH': self.consume_ATSH,
-                                      'SL': self.consume_ATSL }
+#        self.AT_response_dispatch = { 'SH': self.consume_ATSH,
+#                                      'SL': self.consume_ATSL }
         self.started = False
 
     @coroutine
     def start(self):
         t0 = millis()
-        self.address = bytes(8) # zero it out
         yield from self.xcvr.hard_reset()
-        while True:
-            b = yield from self.xcvr.get_frame(100)
-            if b == b'\x8a\x00': # Hardware reset
-                break
-            # FIXME: improve safety
-        # FIXME: 
         yield self.get_and_process_frames() # start this task
         self.address = yield from self.get_MAC_from_radio()
         self.started = True
@@ -323,7 +315,7 @@ class XBRadio:
         # Continuously consume and process packets from radio
         while True:
             b = yield from self.xcvr.get_frame()
-            if __debug__:
+            if False and __debug__:
                 # FIXME: better conditioning, or figure out how
                 #  to have __debug__ not True
                 log.debug("g_a_p_f(): %s", self.str_response_frame(b))
@@ -361,34 +353,12 @@ class XBRadio:
         # appendleft
         self.received_data_packets.insert(0, (b[1:9], b[12:]))
 
-    def was_try_to_consume_AT_response(self, b):
+    def consume_AT_response(self, b):
         # Function applied to AT response packets
         # returns its arg if not consumed
         rv = None
         cmd = str(b[2:4], 'ASCII')
         #print("Got AT response: %s" % cmd)
-        status = b[4]
-        if status is not 0:
-            print("bad status %d" % status)
-            return
-        data = b[5:]
-        if cmd in self.AT_response_dispatch:
-            self.AT_response_dispatch[cmd](cmd, data)
-        elif cmd in self.int_AT:
-            self.values[cmd] = big_endian_int(data)
-        elif cmd in self.str_AT:
-            self.values[cmd] = str(data, 'ASCII')
-        else:
-            rv = b
-        return rv
-
-    # FIXME: better name
-    def try_to_consume_AT_response(self, b):
-        # Function applied to AT response packets
-        # returns its arg if not consumed
-        rv = None
-        cmd = str(b[2:4], 'ASCII')
-        print("Got AT response: %s" % cmd)
         status = b[4]
         if status is not 0:
             print("bad status %d" % status)
@@ -402,13 +372,6 @@ class XBRadio:
             v = data
         self._frame_done(b[1], v)
 
-    def consume_ATSH(self, cmd, data):
-        #print("High serial is %s" % ' '.join("%x" % v for v in data))
-        self.address = data[0:4] + self.address[4:8]
-
-    def consume_ATSL(self, cmd, data):
-        #print("Low serial is %s" % ' '.join("%x" % v for v in data))
-        self.address = self.address[0:4] + data[0:4]
 
     def next_frame_sequence(self):
         self.frame_sequence += 1
@@ -419,6 +382,7 @@ class XBRadio:
 
     @coroutine
     def send_AT_cmd(self, cmd, param=None):
+        # Returns a future that completes to the value
         b = bytes([0x08, self.next_frame_sequence()])
         b += bytes(cmd, 'ASCII')
         if param is not None:
@@ -432,26 +396,15 @@ class XBRadio:
             b += param
         return (yield from self.send_frame_return_future(b))
         
-
-#    @coroutine
-#    def do_AT_cmd_and_process_response(self, cmd, param=None):
-#        yield from self.send_AT_cmd(cmd, param)
-###        yield from self.get_and_process_available_frames(timeout=1) # FIXME: is 1ms long enough?
+    @coroutine
+    def AT_cmd(self, cmd, param=None, timeout=None):
+        # Returns the value, or times out
+        return (yield from wait_for((yield from self.send_AT_cmd(cmd, param)), timeout))
 
     @coroutine
     def get_MAC_from_radio(self):
-        # FIXME: use wait_for
-        print("r_M_f_r()")
-        fh = yield from self.send_AT_cmd('SH')
-        print('1')
-        assert isinstance(fh, Future)
-        fl = yield from self.send_AT_cmd('SL')
-        print('2')
-        assert isinstance(fl, Future)
-        vh = yield from wait_for(fh)
-        print('3')
-        vl = yield from wait_for(fl)
-        print("vh", vh, "vl", vl)
+        vh = yield from wait_for((yield from self.send_AT_cmd('SH')))
+        vl = yield from wait_for((yield from self.send_AT_cmd('SL')))
         return vh + vl
 
     @coroutine
@@ -460,15 +413,17 @@ class XBRadio:
         # the corresponding response frame is received from the radio
         # The frameID is required and assumed to be the second byte
         fs = b[1]
-        if self.frame_wait[fs]:
+        frame_wait = self.frame_wait
+        if frame_wait[fs]:
             log.info("A frame still waiting in slot %d: %r" \
-                     % (fs, self.frame_wait[fs]))
+                     % (fs, frame_wait[fs]))
+            
             # FIXME: do something with the old future
 
         # FIXME this creation of a Future ties us to the default eventloop:
         fut = Future()  # Don't know our loop so must take default
 
-        self.frame_wait[fs] = fut 
+        frame_wait[fs] = fut 
         yield from self.xcvr.send_frame(b)
         return fut
 
