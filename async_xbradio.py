@@ -224,7 +224,6 @@ class XBRHAL:
                 # Here nATTN is in asserted state
             assert not self.nATTN.value(), 'expected nATTN to be asserted (low)'
             rv = yield from get_frame_by_reading(300)
-        # FIXME: use logging instead
         if __debug__:
             log.debug("get_frame() returning %r", rv)
         return rv
@@ -294,6 +293,7 @@ class XBRadio:
                                 0x90: self.consume_rx
         }
         
+        # FIXME: delete
         self.AT_response_dispatch = { 'SH': self.consume_ATSH,
                                       'SL': self.consume_ATSL }
         self.started = False
@@ -309,10 +309,8 @@ class XBRadio:
                 break
             # FIXME: improve safety
         # FIXME: 
-        yield from self.request_MAC_from_radio()
         yield self.get_and_process_frames() # start this task
-        while sum(self.address[0:4]) * sum(self.address[4:8]) == 0:
-            yield
+        self.address = yield from self.get_MAC_from_radio()
         self.started = True
 
     @coroutine
@@ -363,7 +361,7 @@ class XBRadio:
         # appendleft
         self.received_data_packets.insert(0, (b[1:9], b[12:]))
 
-    def try_to_consume_AT_response(self, b):
+    def was_try_to_consume_AT_response(self, b):
         # Function applied to AT response packets
         # returns its arg if not consumed
         rv = None
@@ -384,6 +382,26 @@ class XBRadio:
             rv = b
         return rv
 
+    # FIXME: better name
+    def try_to_consume_AT_response(self, b):
+        # Function applied to AT response packets
+        # returns its arg if not consumed
+        rv = None
+        cmd = str(b[2:4], 'ASCII')
+        print("Got AT response: %s" % cmd)
+        status = b[4]
+        if status is not 0:
+            print("bad status %d" % status)
+            return
+        data = b[5:]
+        if cmd in self.int_AT:
+            v = big_endian_int(data)
+        elif cmd in self.str_AT:
+            v = str(data, 'ASCII')
+        else:
+            v = data
+        self._frame_done(b[1], v)
+
     def consume_ATSH(self, cmd, data):
         #print("High serial is %s" % ' '.join("%x" % v for v in data))
         self.address = data[0:4] + self.address[4:8]
@@ -401,8 +419,8 @@ class XBRadio:
 
     @coroutine
     def send_AT_cmd(self, cmd, param=None):
-        p = bytes([0x08, self.next_frame_sequence()])
-        p += bytes(cmd, 'ASCII')
+        b = bytes([0x08, self.next_frame_sequence()])
+        b += bytes(cmd, 'ASCII')
         if param is not None:
             if not isinstance(param, (bytes, bytearray)):
                 if isinstance(param, int):
@@ -411,8 +429,9 @@ class XBRadio:
                     param = bytes(param, 'ASCII')
                 else:
                     param = bytes(param)
-            p += param
-        yield from self.xcvr.send_frame(p)
+            b += param
+        return (yield from self.send_frame_return_future(b))
+        
 
 #    @coroutine
 #    def do_AT_cmd_and_process_response(self, cmd, param=None):
@@ -420,10 +439,38 @@ class XBRadio:
 ###        yield from self.get_and_process_available_frames(timeout=1) # FIXME: is 1ms long enough?
 
     @coroutine
-    def request_MAC_from_radio(self):
+    def get_MAC_from_radio(self):
         # FIXME: use wait_for
-        yield from self.send_AT_cmd('SH')
-        yield from self.send_AT_cmd('SL')
+        print("r_M_f_r()")
+        fh = yield from self.send_AT_cmd('SH')
+        print('1')
+        assert isinstance(fh, Future)
+        fl = yield from self.send_AT_cmd('SL')
+        print('2')
+        assert isinstance(fl, Future)
+        vh = yield from wait_for(fh)
+        print('3')
+        vl = yield from wait_for(fl)
+        print("vh", vh, "vl", vl)
+        return vh + vl
+
+    @coroutine
+    def send_frame_return_future(self, b):
+        # Sends a frame and returns a future that is completed when
+        # the corresponding response frame is received from the radio
+        # The frameID is required and assumed to be the second byte
+        fs = b[1]
+        if self.frame_wait[fs]:
+            log.info("A frame still waiting in slot %d: %r" \
+                     % (fs, self.frame_wait[fs]))
+            # FIXME: do something with the old future
+
+        # FIXME this creation of a Future ties us to the default eventloop:
+        fut = Future()  # Don't know our loop so must take default
+
+        self.frame_wait[fs] = fut 
+        yield from self.xcvr.send_frame(b)
+        return fut
 
     @coroutine
     def tx(self, data, dest_address=None, ack=True):
@@ -442,17 +489,8 @@ class XBRadio:
                     options])
         b += data
         #print("tx %s ..." % p[:16]) # DEBUG
-        if self.frame_wait[fs]:
-            log.info("A frame still waiting in slot %d: %r" \
-                     % (fs, self.frame_wait[fs]))
-            # FIXME: do something with the old future
-
-        # NOTE this creation of a Future ties us to the default eventloop:
-        fut = Future()  # Don't know our loop so must take default
-
-        self.frame_wait[fs] = fut
-        yield from self.xcvr.send_frame(b)
-        return fut
+        rv = yield from self.send_frame_return_future(b)
+        return rv
 
     @coroutine
     def rx(self, timeout=1):

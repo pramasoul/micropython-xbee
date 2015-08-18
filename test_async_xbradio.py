@@ -103,16 +103,20 @@ class RadioTestCase(unittest.TestCase):
         self.assertNotEqual(sum(self.xb.address), 0)
         #print(self.loop, self.loop.q)
 
+    @unittest.skip("x")
     @async_test
     def testATcmds(self):
         xb = self.xb
         yield from xb.start()
         at = xb.send_AT_cmd
-        yield from at('TP')
+        t1 = yield from at('TP')
+        print("send_AT_cmd yielded", t1)
         yield from at('%V')
         yield from sleep(0.01)
         self.assertTrue(1 < xb.values['TP'] < 60, "bad temperature %d" % xb.values['TP'])
         self.assertTrue(3200 < xb.values['%V'] < 3400, "bad voltage %d" % xb.values['%V'])
+
+
         
     @unittest.skip("incomplete")
     @async_test
@@ -122,6 +126,7 @@ class RadioTestCase(unittest.TestCase):
         at = xb.send_AT_cmd
         yield from at('ER')
 
+    @unittest.skip("x")
     @async_test
     def testGetFrameTimeout(self):
         xb = self.xb
@@ -135,6 +140,7 @@ class RadioTestCase(unittest.TestCase):
         self.assertTrue(34 <= et < 38, "took %dms (expected 34ms)" % et)
 
 
+    @unittest.skip("x")
     @async_test
     def testSendToSelf(self):
         #logging.basicConfig(logging.DEBUG)
@@ -157,6 +163,7 @@ class RadioTestCase(unittest.TestCase):
         self.assertEqual(xb.rx_available(), 0)
 
 
+    @unittest.skip("x")
     @async_test
     def testSendToSelfNoWaiting(self):
         xb = self.xb
@@ -172,6 +179,7 @@ class RadioTestCase(unittest.TestCase):
         self.assertEqual(d, b'bar')
 
 
+    @unittest.skip("x")
     #@unittest.skip('takes 3 seconds')
     @async_test
     def testSendToNonExistentAddress(self):
@@ -182,7 +190,7 @@ class RadioTestCase(unittest.TestCase):
         self.assertEqual(xb.rx_available(), 0)
         t0 = self.loop.time()
         txrv1 = yield from xb.tx('bar1', 'thisisanaddress!')
-        self.assertIsInstance(txrv1, Future)
+        self.assertIsInstance(txrv1, Future, 'got %r (expected a Future)' % txrv1)
         self.assertFalse(txrv1.done())
         v1 = yield from wait_for(txrv1)
         t1 = self.loop.time()
