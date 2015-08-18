@@ -177,28 +177,40 @@ class RadioTestCase(unittest.TestCase):
     #@unittest.skip('takes 3 seconds')
     @async_test
     def testSendToNonExistentAddress(self):
-        print("this takes 3 seconds: ", end='')
+        print("this takes about 10 seconds: ", end='')
+        t_start = self.loop.time()
         xb = self.xb
         yield from xb.start()
         self.assertEqual(xb.rx_available(), 0)
         t0 = self.loop.time()
-        txrv = yield from xb.tx('bar1', 'thisisanaddress!')
-        self.assertIsInstance(txrv, Future)
-        self.assertFalse(txrv.done())
-        v = yield from wait_for(txrv)
+        txrv1 = yield from xb.tx('bar1', 'thisisanaddress!')
+        self.assertIsInstance(txrv1, Future)
+        self.assertFalse(txrv1.done())
+        v1 = yield from wait_for(txrv1)
         t1 = self.loop.time()
-        print(v)
-        print(t1-t0)
-        return
+        self.assertTrue(txrv1.done())
+        self.assertTrue(1 < t1-t0 < 3)
+        t0 = self.loop.time()
+        #No: v2 = yield from wait_for(xb.tx('bar2', 'thisisanaddress!'))
+        #Syntax error: v2 = yield from wait_for(yield from xb.tx('bar2', 'thisisanaddress!'))
+        v2 = yield from wait_for((yield from xb.tx('bar2', 'thisisanaddress!')))
+        t1 = self.loop.time()
+        self.assertEqual(v2, v1)
+        #print(t1-t0)
+        self.assertTrue(1 < t1-t0 < 3)
+        print(v2)
 
-        v = yield from wait_for(xb.tx('bar1', 'thisisanaddress!'), 4)
-        print("1:", v)
-        f = yield from xb.tx('bar2', 'thisisanaddress!')
-        self.assertIsInstance(f, Future)
+        # 4 seconds is long enough to get a failure
+        v = yield from wait_for((yield from xb.tx('bar2', 'thisisanaddress!')), 4)
+        self.assertEqual(v, v1)
+
+        # 0.1 seconds is not long enough, and raises TimeoutError
         with self.assertRaises(TimeoutError):
-            v = yield from wait_for(f, 4)
+            v = yield from wait_for((yield from xb.tx('bar3', 'thisisanaddress!')), 0.1)
 
-        print("2:", v)
+        t_end = self.loop.time()
+        print("took", t_end - t_start, "seconds")
+        return
 
 
         with self.assertRaises(TimeoutError):
@@ -211,8 +223,6 @@ class RadioTestCase(unittest.TestCase):
         with self.assertRaises(TimeoutError):
             v = yield from wait_for(xb.tx('bar4', 'thisisanaddress!'), 0.1)
             print("4:", v)
-
-        return
 
 
         yield from xb.tx('foo', 'thisisanaddress!')
