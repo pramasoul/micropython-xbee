@@ -68,6 +68,7 @@ class RadioTestCase(unittest.TestCase):
     def setUp(self):
         global _test_EventLoop
         logging.basicConfig(logging.INFO)
+        # We use a new loop each time, for isolation between tests
         self.loop = new_event_loop()
         _test_EventLoop = self.loop
         # XBRadio assumes default loop, so set here
@@ -76,6 +77,7 @@ class RadioTestCase(unittest.TestCase):
         self.xb = create_test_radio('flt')
         
     def tearDown(self):
+        logging.basicConfig(logging.INFO)
         pass
 
     def testIsRadio(self):
@@ -88,17 +90,12 @@ class RadioTestCase(unittest.TestCase):
     @async_test
     def testStartRadio(self):
         #logging.basicConfig(logging.DEBUG)
-        #self.loop.verbose = True
-        #self.xb.verbose = True
-        #self.xb.xcvr.verbose = True
         yield from self.xb.start()
         #pyb.LED(1).on()
         self.assertTrue(self.xb.started)
 
     @async_test
     def testAddress(self):
-        #self.xb.verbose = True
-        #self.xb.xcvr.verbose = True
         #print("pre-start: ", self.loop, self.loop.q)
         #logging.basicConfig(logging.DEBUG)
         yield from self.xb.start()
@@ -140,6 +137,7 @@ class RadioTestCase(unittest.TestCase):
 
     @async_test
     def testSendToSelf(self):
+        #logging.basicConfig(logging.DEBUG)
         xb = self.xb
         yield from xb.start()
         self.assertEqual(xb.rx_available(), 0)
@@ -277,7 +275,6 @@ class RadioTestCase(unittest.TestCase):
     @unittest.skip("obsolete")
     def test_get_frame(self):
         #logging.basicConfig(logging.DEBUG)
-        #self.xb.verbose = True
         self.loop.run_until_complete(async(self.xb.start()))
         self.assertTrue(self.xb.started)
         self.v = None
