@@ -178,7 +178,7 @@ class RadioTestCase(unittest.TestCase):
         self.assertEqual(d, b'bar')
 
 
-    @unittest.skip('takes 10 seconds')
+    #@unittest.skip('takes 10 seconds')
     @async_test
     def testSendToNonExistentAddress(self):
         print("this takes about 10 seconds: ", end='')
@@ -256,22 +256,28 @@ class RadioTestCase(unittest.TestCase):
         #print("frame_wait: ", list((i,v) for i,v in enumerate(xb.frame_wait) if v))
         self.assertEqual(result_0, f0.result())
         self.assertEqual(result_0, bytes(3))
-        yield
+        #print("4: q =", self.loop.q)
+        #yield
+        #print("5: q =", self.loop.q)
         #print("frame_wait: ", list((i,v) for i,v in enumerate(xb.frame_wait) if v))
         
         t1 = millis()
         f1 = yield from xb.tx('bar', xb.address)
         self.assertIsInstance(f1, Future)
         self.assertIsNot(f1, f0)
+        #print("6: q =", self.loop.q)
         result_1 = yield from wait_for(f1, None)
         d1 = elapsed_millis(t1)
         self.assertTrue(3 < d1 < 12, "took %dms" % d1)
+        #print("7: q =", self.loop.q)
         #print(elapsed_millis(t1))
         self.assertEqual(result_1, bytes(3))
         a, d = yield from xb.rx()
+        #print("8: q =", self.loop.q)
         self.assertEqual(a, xb.address)
         self.assertEqual(d, b'foo')
         a, d = yield from xb.rx()
+        #print("9: q =", self.loop.q)
         self.assertEqual(a, xb.address)
         self.assertEqual(d, b'bar')
         self.assertEqual(xb.rx_available(), 0)

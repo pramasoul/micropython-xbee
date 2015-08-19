@@ -153,6 +153,7 @@ class XBRHAL:
         # init tuneable parameters
         self.rx_hunk_len = 16
 
+        self.verbose = False
 
     @coroutine
     def hard_reset(self):
@@ -184,7 +185,7 @@ class XBRHAL:
             # Helper to get a packet from the radio itself
             # Note it will spin forever if the radio has no packet,
             # unless a limit of bytes to read is provided
-            if __debug__:
+            if __debug__ and self.verbose:
                 log.debug("get_frame_by_reading(%d)", limit)
             self.nSSEL.low()
             gotten = 0
@@ -193,7 +194,7 @@ class XBRHAL:
                 self.pb.include_bytes(self.spi.recv(self.rx_hunk_len))
                 gotten += self.rx_hunk_len
                 yield
-                if __debug__:
+                if __debug__ and self.verbose:
                     log.debug("get_frame_by_reading(): State %d, gotten %d, marking bytes %d, total marking %d",
                               self.pb.state,
                               gotten,
@@ -202,7 +203,7 @@ class XBRHAL:
             if limit and gotten >= limit:
                 raise FrameOverrunError("got %d bytes and don't have a frame yet" % gotten)
             rv = self.pb.dequeue_one()
-            if __debug__:
+            if __debug__ and self.verbose:
                 log.debug("get_frame_by_reading() returning %r", rv)
             return rv
 
@@ -224,7 +225,7 @@ class XBRHAL:
                 # Here nATTN is in asserted state
             assert not self.nATTN.value(), 'expected nATTN to be asserted (low)'
             rv = yield from get_frame_by_reading(300)
-        if __debug__:
+        if __debug__ and self.verbose:
             log.debug("get_frame() returning %r", rv)
         return rv
 
@@ -241,7 +242,7 @@ class XBRHAL:
     def send_frame(self, buf):
         # Wrap buffer contents in an API frame and send to the radio
         # Radio may be sending a frame to us at the same time
-        if __debug__:
+        if __debug__ and self.verbose:
             log.debug("send_frame(%r)", buf)
         header = bytearray(3)
         hv = memoryview(header)
@@ -271,6 +272,7 @@ class XBRadio:
     def __init__(self, spi, nRESET, DOUT, nSSEL, nATTN):
         self.xcvr = XBRHAL(spi, nRESET, DOUT, nSSEL, nATTN)
         self.received_data_packets = []
+        self.received_data_future = None
         self.frame_sequence = 1
         self.address = bytearray(8)
         self.values = {}
@@ -293,8 +295,7 @@ class XBRadio:
                                 0x90: self.consume_rx
         }
         
-#        self.AT_response_dispatch = { 'SH': self.consume_ATSH,
-#                                      'SL': self.consume_ATSL }
+        self.verbose = False
         self.started = False
 
     @coroutine
@@ -315,12 +316,12 @@ class XBRadio:
         # Continuously consume and process packets from radio
         while True:
             b = yield from self.xcvr.get_frame()
-            if False and __debug__:
+            if  __debug__ and self.verbose:
                 # FIXME: better conditioning, or figure out how
                 #  to have __debug__ not True
                 log.debug("g_a_p_f(): %s", self.str_response_frame(b))
             v = self.process_frame(b)
-            if v and __debug__:
+            if v and __debug__ and self.verbose:
                 log.debug("packet not consumed: %s", self.str_response_frame(b))
 
     def process_frame(self, b):
@@ -349,9 +350,14 @@ class XBRadio:
         self._frame_done(b[1], b[4:])
 
     def consume_rx(self, b):
-        # Parse out (address, data) from a received RF packet and put in FIFO
-        # appendleft
-        self.received_data_packets.insert(0, (b[1:9], b[12:]))
+        # Parse out (address, data) from a received RF packet and provide to
+        # present or subsequent reader in a fifo
+        v = (b[1:9], b[12:])
+        self.received_data_packets.insert(0, v) # appendleft
+        rdf = self.received_data_future
+        #log.info("consume_rx: v=%r, rdf=%r", v, rdf)
+        if rdf and not rdf.done():
+            rdf.set_result(None) # future is hereby satisfied
 
     def consume_AT_response(self, b):
         # Function applied to AT response packets
@@ -447,17 +453,32 @@ class XBRadio:
         rv = yield from self.send_frame_return_future(b)
         return rv
 
+
     @coroutine
     def rx(self, timeout=1):
         # return next available (address, data) received
         #print("rx(timeout=%d): len(received_data_packets) = %d"
         #      % (timeout, len(self.received_data_packets))) # DEBUG
+        #***
         # FIXME: Don't spin, use wait_for
         while True:
             try:
                 return self.received_data_packets.pop()
             except IndexError:
-                yield
+                # DEBUG                
+                #yield
+                #continue
+                # This would not be safe in multi-threaded env,
+                # so take care that interrupt handlers don't
+                # mess with received_data_future or
+                # received_data_packets (else harden this code)
+                # Were the fifo-filler to run right now, we
+                # could get hanged
+                if self.received_data_future is None \
+                   or self.received_data_future.done():
+                    self.received_data_future = Future()
+                #DEBUG yield from wait_for(self.received_data_future, 1)
+                yield from wait_for(self.received_data_future)
 
     @coroutine
     def will_rx(self):
