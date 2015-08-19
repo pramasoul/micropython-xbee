@@ -3,7 +3,7 @@
 import logging
 import unittest
 
-from ubinascii import hexlify
+from ubinascii import hexlify, unhexlify
 
 from asyncio_4pyb import new_event_loop, set_event_loop, get_event_loop, \
     EventLoop
@@ -16,6 +16,7 @@ from async_xbradio import XBRadio, \
 
 from pyb import SPI, Pin, info, millis, elapsed_millis, micros, elapsed_micros
 
+log = logging.getLogger("test")
 
 _test_EventLoop = None
 
@@ -40,6 +41,7 @@ class CoroTestCase(unittest.TestCase):
         was_loop = _test_EventLoop
         self.loop = new_event_loop()
         _test_EventLoop = self.loop
+        assert _test_EventLoop is self.loop
         assert self.loop is not was_loop
 
         #XBRadio uses default loop:
@@ -79,7 +81,8 @@ class RadioTestCase(unittest.TestCase):
         
     def tearDown(self):
         logging.basicConfig(logging.INFO)
-        pass
+        if __debug__:
+            log.debug("loop.q length %d", len(self.loop.q))
 
     def testIsRadio(self):
         # We have a radio object
@@ -132,7 +135,7 @@ class RadioTestCase(unittest.TestCase):
         with self.assertRaises(FrameWaitTimeout):
             yield from xb.xcvr.get_frame(34)
         et = elapsed_millis(t0)
-        self.assertTrue(34 <= et < 40, "took %dms (expected 34ms)" % et)
+        self.assertTrue(34 <= et < 45, "took %dms (expected 34ms)" % et)
 
 
     @async_test
@@ -350,9 +353,94 @@ SPI_CLK (pin 18)	X6	Y6
 SPI_nATTN (pin 19)	Y10	Y4 (not X10)
 """)
 
-def main():
-    unittest.main()
+def interact(role):
 
+    class GotEOT(Exception):
+        pass
+
+    @coroutine
+    def readline():
+        buf = b''
+        while console.isconnected():
+            if console.any():
+                c = console.read(1)
+                if c == b'\x04':
+                    raise GotEOT
+                elif c == b'\r' or c == b'\n':
+                    console.write(b'\r\n')
+                    return buf
+                else:
+                    buf += c
+                    console.write(c)
+            else:
+                yield from sleep(0.05)
+
+    @coroutine
+    def write(buf):
+        console.write(buf)
+        yield
+
+    @coroutine
+    def writeln(buf):
+        yield from write(buf)
+        yield from write(b'\r\n')
+
+
+    @coroutine
+    def interpret(line):
+        #yield from write(b'got "' + line + '"\r\n')
+        if not line:
+            return
+
+        cmd, _, rol = line.partition(b' ')
+        cmd = str(cmd, 'ASCII')
+        rol = rol.lstrip()
+
+        if cmd == 'info':
+            yield from writeln('addr %r' % hexlify(xb.address))
+
+        elif cmd == 'tx':
+            addr, _, payload = rol.partition(b':')
+            address = unhexlify(addr)
+            yield from write('sending %d bytes to %r...' % \
+                               (len(payload), address))
+            status = yield from wait_for((yield from xb.tx(payload, address)))
+            yield from writeln('status %r' % status)
+
+        elif cmd == 'rx':
+            a, d = yield from xb.rx()
+            yield from writeln('from %s got %r' % \
+                               (str(hexlify(a), 'ASCII'), d))
+
+        elif cmd in ('quit', 'exit', 'bye'):
+            raise GotEOT
+
+
+    @coroutine
+    def repl(xb):
+        yield from xb.start()
+        while(console.isconnected()):
+            prompt = bytes(role + '> ', 'ASCII')
+            #console.write(prompt)
+            yield from write(prompt)
+            try:
+                line = yield from readline()
+                yield from interpret(line)
+            except GotEOT:
+                return
+
+    console = pyb.USB_VCP()
+    xb = create_test_radio(role)
+    loop = new_event_loop()
+    set_event_loop(loop)
+    loop.run_until_complete(repl(xb))
+
+
+
+def main():
+    role = 'flt'
+    unittest.main()
+    interact(role)
 
 if __name__ == '__main__':
     main()
