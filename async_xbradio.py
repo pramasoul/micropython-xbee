@@ -22,10 +22,8 @@ class SpiCommError(RadioException):
 class FrameOverrunError(RadioException):
     pass
 
-#class ShortPacket(RadioException):
-#    pass
-#class BadChecksum(RadioException):
-#    pass
+class ATStatusError(RadioException):
+    pass
 
 class PacketException(Exception):
     pass
@@ -115,8 +113,8 @@ class FrameBuffer(object):
 # Hardware interface
 class XBRHAL:
     #atplzero = b'\x08\x03PL\x00'
-    int_AT = set('DB,TP,%V,PL'.split(','))
-    str_AT = set('NI,VL'.split(','))
+    #int_AT = set('DB,TP,%V,PL'.split(','))
+    #str_AT = set('NI,VL'.split(','))
     
     def __init__(self, spi, nRESET, DOUT, nSSEL, nATTN):
 
@@ -367,15 +365,16 @@ class XBRadio:
         #print("Got AT response: %s" % cmd)
         status = b[4]
         if status is not 0:
-            print("bad status %d" % status)
-            return
-        data = b[5:]
-        if cmd in self.int_AT:
-            v = big_endian_int(data)
-        elif cmd in self.str_AT:
-            v = str(data, 'ASCII')
+            log.debug(self.str_response_frame(b))
+            v = ATStatusError('AT response status %d' % status) # DEBUG
         else:
-            v = data
+            data = b[5:]
+            if cmd in self.int_AT:
+                v = big_endian_int(data)
+            elif cmd in self.str_AT:
+                v = str(data, 'ASCII')
+            else:
+                v = data
         self._frame_done(b[1], v)
 
 
@@ -404,8 +403,12 @@ class XBRadio:
         
     @coroutine
     def AT_cmd(self, cmd, param=None, timeout=None):
-        # Returns the value, or times out
-        return (yield from wait_for((yield from self.send_AT_cmd(cmd, param)), timeout))
+        # Returns the value, or times out, or raises exception
+        #return (yield from wait_for((yield from self.send_AT_cmd(cmd, param)), timeout))
+        v = yield from wait_for((yield from self.send_AT_cmd(cmd, param)), timeout)
+        if isinstance(v, Exception):
+            raise(v)
+        return v
 
     @coroutine
     def get_MAC_from_radio(self):
