@@ -20,6 +20,8 @@ log = logging.getLogger("test")
 
 _test_EventLoop = None
 
+_role = None
+
 def async_test(f):
     def wrapper(*args, **kwargs):
         global _test_EventLoop
@@ -70,6 +72,7 @@ class RadioTestCase(unittest.TestCase):
 
     def setUp(self):
         global _test_EventLoop
+        global _role
         logging.basicConfig(logging.INFO)
         # We use a new loop each time, for isolation between tests
         self.loop = new_event_loop()
@@ -77,7 +80,7 @@ class RadioTestCase(unittest.TestCase):
         # XBRadio assumes default loop, so set here
         set_event_loop(self.loop)
         #self.xb = create_test_radio('gse')
-        self.xb = create_test_radio('flt')
+        self.xb = create_test_radio(_role)
         
     def tearDown(self):
         logging.basicConfig(logging.INFO)
@@ -438,9 +441,10 @@ def interact(role):
 
 
 def main():
-    role = 'flt'
+    global _role
+    _role = open('xbradio.cfg').read().strip()
     unittest.main()
-    interact(role)
+    interact(_role)
 
 if __name__ == '__main__':
     main()
