@@ -12,7 +12,7 @@ from async_xbradio import Future, TimeoutError, \
     coroutine, sleep, wait_for
 
 from async_xbradio import XBRadio, \
-    FrameOverrunError, FrameWaitTimeout
+    FrameOverrunError, FrameWaitTimeout, ATStatusError
 
 from pyb import SPI, Pin, info, millis, elapsed_millis, micros, elapsed_micros
 
@@ -178,7 +178,7 @@ class RadioTestCase(unittest.TestCase):
         self.assertEqual(d, b'bar')
 
 
-    #@unittest.skip('takes 10 seconds')
+    @unittest.skip('takes 10 seconds')
     @async_test
     def testSendToNonExistentAddress(self):
         print("this takes about 10 seconds: ", end='')
@@ -394,6 +394,13 @@ def interact(role):
         yield from write(buf)
         yield from write(b'\r\n')
 
+    @coroutine
+    def echoServer(n=10):
+        for i in range(n):
+            a, d = yield from xb.rx()
+            yield from writeln('echoing %r to %s' % \
+                               (d, str(hexlify(a), 'ASCII')))
+            yield from xb.tx(d, a)
 
     @coroutine
     def interpret(line):
@@ -405,8 +412,34 @@ def interact(role):
         cmd = str(cmd, 'ASCII')
         rol = rol.lstrip()
 
+        def showAT(at):
+            yield from write(' %s %d' % (at, (yield from xb.AT_cmd(at))))
+            
         if cmd == 'info':
-            yield from writeln('addr %r' % hexlify(xb.address))
+            yield from write('addr %r' % hexlify(xb.address))
+            yield from showAT('DB')
+            yield from showAT('PL')
+            yield from writeln('')
+
+        elif cmd.lower().startswith('at'):
+            try:
+                v = yield from xb.AT_cmd(cmd[2:4], cmd[4:])
+            except ATStatusError as e:
+                yield from writeln(e.args[0])
+            else:
+                yield from writeln(repr(v))
+
+        elif cmd == 'echo':
+            try:
+                n = int(rol.split()[0])
+            except:
+                n = 1
+            yield from echoServer(n)
+
+        elif cmd == 'rx':
+            a, d = yield from xb.rx()
+            yield from writeln('from %s got %r' % \
+                               (str(hexlify(a), 'ASCII'), d))
 
         elif cmd == 'tx':
             addr, _, payload = rol.partition(b':')
@@ -416,14 +449,12 @@ def interact(role):
             status = yield from wait_for((yield from xb.tx(payload, address)))
             yield from writeln('status %r' % status)
 
-        elif cmd == 'rx':
-            a, d = yield from xb.rx()
-            yield from writeln('from %s got %r' % \
-                               (str(hexlify(a), 'ASCII'), d))
-
         elif cmd in ('quit', 'exit', 'bye'):
             raise GotEOT
 
+        else:
+            yield from writeln('huh?')
+        
 
     @coroutine
     def repl(xb):
