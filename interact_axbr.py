@@ -9,7 +9,7 @@ from async_xbradio import XBRadio, ATStatusError
 
 import gc
 
-from pyb import USB_VCP, SPI, Pin
+from pyb import USB_VCP, SPI, Pin, millis, elapsed_millis
 
 
 class GotEOT(Exception):
@@ -22,17 +22,33 @@ class XBRadio_CLI():
         self.role = role
         self.console = USB_VCP()
         self.command_dispatch = { }
+        self.cmd_hist = []
+        self.prompt = bytes(self.role + '> ', 'ASCII')
+
 
     @coroutine
     def readline(self):
         console = self.console
+        hi = 0
         buf = b''
         while console.isconnected():
             if console.any():
                 c = console.read(1)
                 if c == b'\x04':
                     raise GotEOT
+                elif c == b'\x0e': # ^N
+                    buf = self.cmd_hist[hi][:]
+                    hi = max(hi-1, 0)
+                    console.write(b'\r' + self.prompt + buf + b'\x1b[K')
+                elif c == b'\x10': # ^P
+                    buf = self.cmd_hist[hi][:]
+                    hi = min(hi+1, len(self.cmd_hist)-1)
+                    console.write(b'\r' + self.prompt + buf + b'\x1b[K')
                 elif c == b'\r' or c == b'\n':
+                    self.cmd_hist.insert(0, buf)
+                    if len(self.cmd_hist) > 16:
+                        self.cmd_hist.pop()
+                    hi = 0
                     console.write(b'\r\n')
                     return buf
                 else:
@@ -87,9 +103,8 @@ class XBRadio_CLI():
             yield from xb.start()
         console = self.console
         while(console.isconnected()):
-            prompt = bytes(self.role + '> ', 'ASCII')
             #console.self.write(prompt)
-            yield from self.write(prompt)
+            yield from self.write(self.prompt)
             try:
                 line = yield from self.readline()
                 yield from self.interpret(line)
@@ -136,6 +151,42 @@ def echo_cmd(cli, cmd, rol):
         n = 1
     yield from cli.echoServer(n)
 
+
+@coroutine
+def dest_cmd(cli, cmd, rol):
+    # Set a default destination address
+    cli.destination = unhexlify(rol)
+    yield
+
+
+@coroutine
+def ping_cmd(cli, cmd, rol):
+    args = rol.split()
+
+    try:
+        n = int(args[0])
+    except:
+        n = 1
+
+    try:
+        address = unhexlify(args[1])
+    except:
+        address = cli.destination
+
+    payload = b'ping'
+
+    t0 = millis()
+    for i in range(n):
+        status = yield from wait_for((yield from cli.xb.tx(payload, address)))
+        yield from cli.write('-')
+        a, d = yield from cli.xb.rx()
+        yield from cli.write('|')
+
+    duration = elapsed_millis(t0)
+    yield from cli.writeln('')
+    yield from cli.writeln("%d in %dms" % (n, duration))
+
+
 @coroutine
 def rx_cmd(cli, cmd, rol):
     try:
@@ -150,7 +201,10 @@ def rx_cmd(cli, cmd, rol):
 @coroutine
 def tx_cmd(cli, cmd, rol):
     addr, _, payload = rol.partition(b':')
-    address = unhexlify(addr)
+    if len(addr) == 16:
+        address = unhexlify(addr)
+    else:
+        address = cli.destination
     yield from cli.write('sending %d bytes to %r...' % \
                        (len(payload), address))
     status = yield from wait_for((yield from cli.xb.tx(payload, address)))
@@ -173,6 +227,8 @@ def inject_standard_commands(cli):
         'at': at_cmd,
         'hey': heyUsaid_cmd,
         'echo': echo_cmd,
+        'dest': dest_cmd,
+        'ping': ping_cmd,
         'rx': rx_cmd,
         'tx': tx_cmd,
         'quit': quit_cmd })
