@@ -388,7 +388,9 @@ class XBRadio:
     def send_AT_cmd(self, cmd, param=None):
         # Returns a future that completes to the value
         b = bytes([0x08, self.next_frame_sequence()])
-        b += bytes(cmd, 'ASCII')
+        if isinstance(cmd, str):
+            cmd = bytes(cmd, 'ASCII')
+        b += cmd
         if param is not None:
             if not isinstance(param, (bytes, bytearray)):
                 if isinstance(param, int):
