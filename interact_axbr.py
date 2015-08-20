@@ -4,9 +4,10 @@ from asyncio_4pyb import new_event_loop, set_event_loop
 
 from async_xbradio import Future, TimeoutError, \
     coroutine, sleep, wait_for
-    
 
 from async_xbradio import XBRadio, ATStatusError
+
+import gc
 
 from pyb import USB_VCP, SPI, Pin
 
@@ -20,6 +21,7 @@ class XBRadio_CLI():
         self.xb = xb
         self.role = role
         self.console = USB_VCP()
+        self.command_dispatch = { }
 
     @coroutine
     def readline(self):
@@ -58,71 +60,32 @@ class XBRadio_CLI():
                                (d, str(hexlify(a), 'ASCII')))
             yield from xb.tx(d, a)
 
+
     @coroutine
     def interpret(self, line):
-        #yield from self.write(b'got "' + line + '"\r\n')
         if not line:
             return
 
         cmd, _, rol = line.partition(b' ')
         cmd = str(cmd, 'ASCII')
         rol = rol.lstrip()
-        xb = self.xb
 
-        def showAT(at):
-            yield from self.write(' %s %d' % (at, (yield from xb.AT_cmd(at))))
-
-        if cmd == 'info':
-            yield from self.write('addr %r' % hexlify(xb.address))
-            yield from showAT('DB')
-            yield from showAT('PL')
-            yield from self.writeln('')
-
-        elif cmd.lower().startswith('at'):
-            try:
-                v = yield from xb.AT_cmd(cmd[2:4], cmd[4:])
-            except ATStatusError as e:
-                yield from self.writeln(e.args[0])
-            else:
-                yield from self.writeln(repr(v))
-
-        elif cmd == 'echo':
-            try:
-                n = int(rol.split()[0])
-            except:
-                n = 1
-            yield from echoServer(n)
-
-        elif cmd == 'rx':
-            try:
-                n = int(rol.split()[0])
-            except:
-                n = 1
-            for i in range(n):
-                a, d = yield from xb.rx()
-                yield from self.writeln('from %s got %r' % \
-                                   (str(hexlify(a), 'ASCII'), d))
-
-        elif cmd == 'tx':
-            addr, _, payload = rol.partition(b':')
-            address = unhexlify(addr)
-            yield from self.write('sending %d bytes to %r...' % \
-                               (len(payload), address))
-            status = yield from wait_for((yield from xb.tx(payload, address)))
-            yield from self.writeln('status %r' % status)
-
-        elif cmd in ('quit', 'exit', 'bye'):
-            raise GotEOT
-
+        fun = self.command_dispatch.get(cmd.lower())
+        if fun:
+            yield from fun(self, cmd, rol)
+        elif cmd in ('help', '?'):
+            yield from self.write('Commands are: ')
+            yield from self.writeln(', '.join(sorted(self.command_dispatch.keys())))
         else:
             yield from self.writeln('huh?')
 
 
     @coroutine
-    def repl(self, xb):
+    def repl(self, xb, noquit=False):
         xb = self.xb
+        if not xb.started:
+            yield from xb.start()
         console = self.console
-        yield from xb.start()
         while(console.isconnected()):
             prompt = bytes(self.role + '> ', 'ASCII')
             #console.self.write(prompt)
@@ -131,7 +94,90 @@ class XBRadio_CLI():
                 line = yield from self.readline()
                 yield from self.interpret(line)
             except GotEOT:
-                return
+                if noquit:
+                    yield from self.writeln("can't quit!")
+                else:
+                    return
+
+
+################################################################
+
+@coroutine
+def info_cmd(cli, cmd, rol):
+
+    @coroutine
+    def showAT(at):
+        yield from cli.write(' %s %d' % (at, (yield from cli.xb.AT_cmd(at))))
+
+    yield from cli.write('addr %s' % hexlify(cli.xb.address))
+    yield from showAT('DB')
+    yield from showAT('PL')
+    gc.collect()
+    yield
+    gc.collect()
+    yield from cli.write(' mem_free %d' % gc.mem_free())
+    yield from cli.writeln('')
+
+
+@coroutine
+def at_cmd(cli, cmd, rol):
+    try:
+        v = yield from cli.xb.AT_cmd(rol[:2], rol[2:])
+    except ATStatusError as e:
+        yield from cli.writeln(e.args[0])
+    else:
+        yield from cli.writeln(repr(v))
+
+@coroutine
+def echo_cmd(cli, cmd, rol):
+    try:
+        n = int(rol.split()[0])
+    except:
+        n = 1
+    yield from cli.echoServer(n)
+
+@coroutine
+def rx_cmd(cli, cmd, rol):
+    try:
+        n = int(rol.split()[0])
+    except:
+        n = 1
+    for i in range(n):
+        a, d = yield from cli.xb.rx()
+        yield from cli.writeln('from %s got %r' % \
+                           (str(hexlify(a), 'ASCII'), d))
+
+@coroutine
+def tx_cmd(cli, cmd, rol):
+    addr, _, payload = rol.partition(b':')
+    address = unhexlify(addr)
+    yield from cli.write('sending %d bytes to %r...' % \
+                       (len(payload), address))
+    status = yield from wait_for((yield from cli.xb.tx(payload, address)))
+    yield from cli.writeln('status %r' % status)
+
+@coroutine
+def quit_cmd(cli, cmd, rol):
+    raise GotEOT
+
+
+
+@coroutine
+def heyUsaid_cmd(cli, cmd, rol):
+    yield from cli.writeln("You said %s %s" % (cmd, rol))
+
+
+def inject_standard_commands(cli):
+    cli.command_dispatch.update({
+        'info': info_cmd,
+        'at': at_cmd,
+        'hey': heyUsaid_cmd,
+        'echo': echo_cmd,
+        'rx': rx_cmd,
+        'tx': tx_cmd,
+        'quit': quit_cmd })
+
+
 
 
 def interact(role=None):
@@ -150,6 +196,8 @@ def interact(role=None):
                            nSSEL = Pin('Y5'),
                            nATTN = Pin('Y4'))
 
+
+
     if role is None:
         config = eval(open('xbradio.cfg').read())
         role = config['role']
@@ -158,8 +206,9 @@ def interact(role=None):
     xb = create_test_radio(role)
     cli = XBRadio_CLI(xb, role)
 
+    inject_standard_commands(cli)
+
     loop = new_event_loop()
-    #print("role %r, console %r, xb %r, loop %r" % (role, console, xb, loop))
     set_event_loop(loop)
     loop.run_until_complete(cli.repl(xb))
 
