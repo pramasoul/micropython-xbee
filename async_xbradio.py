@@ -10,6 +10,7 @@ log = logging.getLogger("xbradio")
 from pyb import SPI, Pin
 from pyb import millis, elapsed_millis
 
+
 class RadioException(Exception):
     pass
 
@@ -31,38 +32,44 @@ class PacketException(Exception):
 class ChecksumError(PacketException):
     pass
 
+
 def big_endian_int(b):
     rv = 0
     for v in list(b):
         rv = (rv << 8) + int(v)
     return rv
 
+
 class FrameBuffer(object):
+    # A helper class that accepts bytes received from an XBee,
+    # identifies frames, stores them in a queue, and provides
+    # them from the queue on request
+
     def __init__(self):
-        self.packets = []
+        self.frames = []
         self.reset_parse()
         self.total_marking_bytes_count = 0
         self.marking_bytes_count = 0
-        self.packet_count = 0
+        self.frame_count = 0
 
     def reset_parse(self):
         # States:
-        # 0: looking for new packet
+        # 0: looking for new frame
         # 1: found sync ('~')
         # 2: have first byte of payload length
         # 3: have payload length, gathering payload
         # 4: have full payload, need check byte
         self.state = 0
-        self.packet_buf = b''
+        self.frame_buf = b''
 
     def __len__(self):
-        return len(self.packets)
+        return len(self.frames)
 
     def __iter__(self):
-        return iter(self.packets)
+        return iter(self.frames)
 
     def dequeue_one(self):
-        return self.packets.pop(0)
+        return self.frames.pop(0)
 
     def include_bytes(self, b):
         while len(b):
@@ -87,26 +94,26 @@ class FrameBuffer(object):
                     self.state = 3
             if self.state is 3:
                 # Try to get the bytes we need to make the length
-                want = self.payload_length - len(self.packet_buf)
-                self.packet_buf += b[:want]
+                want = self.payload_length - len(self.frame_buf)
+                self.frame_buf += b[:want]
                 b = b[want:]
-                if len(self.packet_buf) == self.payload_length:
+                if len(self.frame_buf) == self.payload_length:
                     self.state = 4
             if self.state is 4:
                 if len(b):
                     check_byte = b[0]
                     b = b[1:]
-                    if (sum(self.packet_buf) & 0xff) + check_byte != 0xff:
-                        self.bad = (self.packet_buf, check_byte)
+                    if (sum(self.frame_buf) & 0xff) + check_byte != 0xff:
+                        self.bad = (self.frame_buf, check_byte)
                         self.reset_parse()
-                        raise ChecksumError("sum(packet) = 0x%x, check_byte = 0x%x" \
+                        raise ChecksumError("sum(frame) = 0x%x, check_byte = 0x%x" \
                                           % (sum(self.bad[0]), self.bad[1]))
-                    self.packets.append(self.packet_buf)
-                    self.packet_count += 1
-                    self.packet_buf = b''
+                    self.frames.append(self.frame_buf)
+                    self.frame_count += 1
+                    self.frame_buf = b''
                     self.state = 0
 
-    def in_a_packet(self):
+    def in_a_frame(self):
         return bool(self.state)
 
 
@@ -125,9 +132,9 @@ class XBRHAL:
         # So we use an experimentally-derived lower frequency
         # The running frequency is actually determined by the prescale, a
         # power-of-two divisor of the APB bus frequency.
-        # prescaler=256 with delay_after_nATTN=1 ok (tested 340k packets)
-        # prescaler=128 with delay_after_nATTN=0 ok (tested 310k packets)
-        # prescaler=64 failed after of order 1000 packets
+        # prescaler=256 with delay_after_nATTN=1 ok (tested 340k frames)
+        # prescaler=128 with delay_after_nATTN=0 ok (tested 310k frames)
+        # prescaler=64 failed after of order 1000 frames
         spi.init(SPI.MASTER, prescaler=128, polarity=0)
 
         nRESET.init(nRESET.OUT_OD, nRESET.PULL_UP)
@@ -209,7 +216,7 @@ class XBRHAL:
         if len(self.pb):
             rv = self.pb.dequeue_one()
         # else if part way into a packet, get the rest
-        elif self.pb.in_a_packet():
+        elif self.pb.in_a_frame():
             rv = yield from get_frame_by_reading(300) # 300 exceeds max packet length
         # else see if one turns up within the timeout
         else:
@@ -227,14 +234,6 @@ class XBRHAL:
             log.debug("get_frame() returning %r", rv)
         return rv
 
-#    @coroutine
-#    def flush(self):
-#        # Flush out all readily-available frames from the radio
-#        while True:
-#            try:
-#                b = yield from self.get_frame(timeout=0)
-#            except FrameWaitTimeout:
-#                break
 
     @coroutine
     def send_frame(self, buf):
