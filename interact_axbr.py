@@ -11,21 +11,6 @@ from async_xbradio import XBRadio, ATStatusError
 from pyb import USB_VCP, SPI, Pin
 
 
-def create_test_radio(r):
-    if r == 'gse': 
-        return XBRadio(spi = SPI(1),
-                       nRESET = Pin('Y11'),
-                       DOUT = Pin('Y12'),
-                       nSSEL = Pin('X5'),
-                       nATTN = Pin('Y10'))
-    if r == 'flight' or r == 'flt':
-        return XBRadio(spi = SPI(2),
-                       nRESET = Pin('X11'),
-                       DOUT = Pin('X12'),
-                       nSSEL = Pin('Y5'),
-                       nATTN = Pin('Y4'))
-
-
 class GotEOT(Exception):
     pass
 
@@ -150,6 +135,21 @@ class XBRadio_CLI():
 
 
 def interact(role=None):
+
+    def create_test_radio(r):
+        if r == 'gse': 
+            return XBRadio(spi = SPI(1),
+                           nRESET = Pin('Y11'),
+                           DOUT = Pin('Y12'),
+                           nSSEL = Pin('X5'),
+                           nATTN = Pin('Y10'))
+        if r == 'flight' or r == 'flt':
+            return XBRadio(spi = SPI(2),
+                           nRESET = Pin('X11'),
+                           DOUT = Pin('X12'),
+                           nSSEL = Pin('Y5'),
+                           nATTN = Pin('Y4'))
+
     if role is None:
         config = eval(open('xbradio.cfg').read())
         role = config['role']
