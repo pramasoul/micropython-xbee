@@ -22,8 +22,9 @@ class XBRadio_CLI():
         self.role = role
         self.console = USB_VCP()
         self.command_dispatch = { }
-        self.cmd_hist = []
+        self.cmd_hist = [b'']
         self.prompt = bytes(self.role + '> ', 'ASCII')
+        self.tx_want_ack = True
 
 
     @coroutine
@@ -68,13 +69,14 @@ class XBRadio_CLI():
         yield from self.write(b'\r\n')
 
     @coroutine
-    def echoServer(self, n=10):
+    def echoServer(self, n=10, quiet=False):
         xb = self.xb
         for i in range(n):
             a, d = yield from xb.rx()
-            yield from self.writeln('echoing %r to %s' % \
-                               (d, str(hexlify(a), 'ASCII')))
-            yield from xb.tx(d, a)
+            if not quiet:
+                yield from self.writeln('echoing %r to %s' % \
+                                        (d, str(hexlify(a), 'ASCII')))
+            yield from xb.tx(d, a, ack=self.tx_want_ack)
 
 
     @coroutine
@@ -145,11 +147,17 @@ def at_cmd(cli, cmd, rol):
 
 @coroutine
 def echo_cmd(cli, cmd, rol):
+    args = rol.split()
+    if args[0] == b'-q':
+        quiet = True
+        args.pop(0)
+    else:
+        quiet = False
     try:
-        n = int(rol.split()[0])
+        n = int(args[0])
     except:
-        n = 1
-    yield from cli.echoServer(n)
+        n = 1<<30
+    yield from cli.echoServer(n, quiet=quiet)
 
 
 @coroutine
@@ -157,6 +165,22 @@ def dest_cmd(cli, cmd, rol):
     # Set a default destination address
     cli.destination = unhexlify(rol)
     yield
+
+
+@coroutine
+def coro_cmd(cli, cmd, rol):
+    # launch a command in the background, as a coro
+    c_cmd, _, c_rol = rol.partition(b' ')
+    c_cmd = str(c_cmd, 'ASCII')
+    c_rol = c_rol.lstrip()
+
+    fun = cli.command_dispatch.get(c_cmd.lower())
+    #print(cli, c_cmd, c_rol)
+    if fun:
+        yield fun(cli, c_cmd, c_rol)
+    else:
+        yield from cli.writeln("coro can't find %s" % c_cmd)
+
 
 
 @coroutine
@@ -173,11 +197,12 @@ def ping_cmd(cli, cmd, rol):
     except:
         address = cli.destination
 
-    payload = b'ping'
+    base = b'ping'
 
     t0 = millis()
     for i in range(n):
-        status = yield from wait_for((yield from cli.xb.tx(payload, address)))
+        payload = bytes('%d: ' % (i+1), 'ASCII') + base
+        status = yield from wait_for((yield from cli.xb.tx(payload, address, ack=cli.tx_want_ack)))
         yield from cli.write('-')
         a, d = yield from cli.xb.rx()
         yield from cli.write('|')
@@ -207,12 +232,21 @@ def tx_cmd(cli, cmd, rol):
         address = cli.destination
     yield from cli.write('sending %d bytes to %r...' % \
                        (len(payload), address))
-    status = yield from wait_for((yield from cli.xb.tx(payload, address)))
+    status = yield from wait_for((yield from cli.xb.tx(payload, address, ack=cli.tx_want_ack)))
     yield from cli.writeln('status %r' % status)
+
+
+@coroutine
+def ack_cmd(cli, cmd, rol):
+    if len(rol):
+        cli.tx_want_ack = rol == b'on'
+    else:
+        yield from cli.writeln(cli.tx_want_ack and 'on' or 'off')
 
 @coroutine
 def quit_cmd(cli, cmd, rol):
     raise GotEOT
+    yield
 
 
 
@@ -223,11 +257,13 @@ def heyUsaid_cmd(cli, cmd, rol):
 
 def inject_standard_commands(cli):
     cli.command_dispatch.update({
-        'info': info_cmd,
+        'ack': ack_cmd,
         'at': at_cmd,
-        'hey': heyUsaid_cmd,
-        'echo': echo_cmd,
+        'coro': coro_cmd,
         'dest': dest_cmd,
+        'echo': echo_cmd,
+        'hey': heyUsaid_cmd,
+        'info': info_cmd,
         'ping': ping_cmd,
         'rx': rx_cmd,
         'tx': tx_cmd,
