@@ -573,3 +573,10 @@ class XBRadio:
             assert self.nATTN.value(), "nATTN is still asserted after read"
         #self.show()
 
+
+def make_radio_from_config_dict(d):
+    return XBRadio(spi = SPI(d['spi']),
+                   nRESET = Pin(d['nRESET']),
+                   DOUT = Pin(d['DOUT']),
+                   nSSEL = Pin(d['SPI_nSSEL']),
+                   nATTN = Pin(d['SPI_nATTN']))
