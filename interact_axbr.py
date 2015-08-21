@@ -78,8 +78,16 @@ class XBRadio_CLI():
             if not quiet:
                 yield from self.writeln('echoing %r to %s' % \
                                         (d, str(hexlify(a), 'ASCII')))
-            yield from xb.tx(d, a, ack=self.tx_want_ack)
-
+            for attempt in range(10):
+                try:
+                    fut = yield from xb.tx(d, a, ack=self.tx_want_ack)
+                    yield from wait_for(fut, 3)
+                except TimeoutError:
+                    if not quiet:
+                        yield from self.writeln('echo tx timeout on attempt %d' % attempt)
+                    continue
+                else:
+                    break
 
     @coroutine
     def interpret(self, line):
@@ -132,7 +140,7 @@ def info_cmd(cli, cmd, rol):
     yield from showAT('DB')
     yield from showAT('PL')
     loop = yield GetRunningLoop(None)
-    yield from cli.write(' %d queued' % len(loop.q))
+    yield from cli.write(' qlen %d' % len(loop.q))
     gc.collect()
     yield
     gc.collect()
@@ -194,6 +202,12 @@ def coro_cmd(cli, cmd, rol):
 def ping_cmd(cli, cmd, rol):
     args = rol.split()
 
+    if args and args[0] == b'-q':
+        quiet = True
+        args.pop(0)
+    else:
+        quiet = False
+
     try:
         n = int(args[0])
     except:
@@ -204,19 +218,22 @@ def ping_cmd(cli, cmd, rol):
     except:
         address = cli.destination
 
-    base = b'ping'
+    loop = yield GetRunningLoop(None)
 
     t0 = millis()
     for i in range(n):
-        payload = bytes('%d: ' % (i+1), 'ASCII') + base
+        payload = b'%d: ping at %.3f' % (i+1, loop.time())
         status = yield from wait_for((yield from cli.xb.tx(payload, address, ack=cli.tx_want_ack)))
-        yield from cli.write('-')
+        if not quiet:
+            yield from cli.write('-')
         try:
             a, d = yield from wait_for(cli.xb.rx(), 1)
         except TimeoutError:
-            yield from cli.write('T')
+            if not quiet:
+                yield from cli.write('T')
         else:
-            yield from cli.write('|')
+            if not quiet:
+                yield from cli.write('|')
 
     duration = elapsed_millis(t0)
     yield from cli.writeln('')
