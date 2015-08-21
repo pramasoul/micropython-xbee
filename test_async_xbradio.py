@@ -324,6 +324,50 @@ class RadioTestCase(unittest.TestCase):
         print("Address %s" % str(hexlify(xb.address), 'ASCII'))
 
 
+    @unittest.skip("takes too long")
+    @async_test
+    def testBuzz(self):
+        n = 1000
+        delay = 0.01
+        tx_want_ack = True
+
+        xb = self.xb
+        yield from xb.start()
+
+        cnt = 0
+        for i in range(n):
+            try:
+                for attempts in range(10):
+                    fut = yield from xb.tx(b'foo %d' % cnt, xb.address, ack=tx_want_ack)
+                    try:
+                        yield from wait_for(fut, 1)
+                    except TimeoutError:
+                        print("tx ack timed out at %d" % cnt)
+                        #continue
+                        raise
+                    else:
+                        break
+                if attempts < 10:
+                    yield from sleep(delay)
+                    try:
+                        a, d =yield from wait_for(xb.rx(), 1)
+                    except TimeoutError:
+                        print("rx timed out at %d" % cnt)
+                        raise
+                    cnt += 1
+                    if cnt % 100 == 0:
+                        print('.', end='')
+                        if cnt % 10000 == 0:
+                            print('%d' % (cnt//10000))
+                else:
+                    print('10 tries no luck to get tx ack')
+            except TimeoutError:
+                print("Timeout at %d" % cnt)
+                raise
+            #except Exception as e:
+            #    print(e)
+
+
 def gse():
     test_as(create_test_radio('gse'))
 
