@@ -3,6 +3,8 @@
 from asyncio_4pyb import Future, TimeoutError, \
     coroutine, sleep, wait_for
 
+from asyncio_4pyb import GetRunningLoop
+
 import logging
 
 log = logging.getLogger("xbradio")
@@ -157,6 +159,7 @@ class XBRHAL:
 
         # init tuneable parameters
         self.rx_hunk_len = 16
+        self.limit_for_g_f_b_r = 300
 
         self.verbose = False
 
@@ -217,7 +220,7 @@ class XBRHAL:
             rv = self.pb.dequeue_one()
         # else if part way into a packet, get the rest
         elif self.pb.in_a_frame():
-            rv = yield from get_frame_by_reading(300) # 300 exceeds max packet length
+            rv = yield from get_frame_by_reading(self.limit_for_g_f_b_r) # 300 exceeds max packet length
         # else see if one turns up within the timeout
         else:
             if self.nATTN.value():  # No data available from radio yet
@@ -229,7 +232,7 @@ class XBRHAL:
                         raise FrameWaitTimeout("%dms" % timeout)
                 # Here nATTN is in asserted state
             assert not self.nATTN.value(), 'expected nATTN to be asserted (low)'
-            rv = yield from get_frame_by_reading(300)
+            rv = yield from get_frame_by_reading(self.limit_for_g_f_b_r)
         if __debug__ and self.verbose:
             log.debug("get_frame() returning %r", rv)
         return rv
@@ -332,7 +335,7 @@ class XBRadio:
     def _frame_done(self, fs, result=None):
         fut = self.frame_wait[fs]
         #print("setting result for frame #%d %r to %r" % (fs, fut, result))
-        assert isinstance(fut, Future)
+        assert isinstance(fut, Future), "_frame_done(%d) got %r (expected future)" % (fs, fut)
         assert not fut.done()
         fut.set_result(result)
         self.frame_wait[fs] = None
@@ -423,6 +426,7 @@ class XBRadio:
         # the corresponding response frame is received from the radio
         # The frameID is required and assumed to be the second byte
         fs = b[1]
+        loop = yield GetRunningLoop(None)
         frame_wait = self.frame_wait
         if frame_wait[fs]:
             log.info("A frame still waiting in slot %d: %r" \
@@ -430,10 +434,8 @@ class XBRadio:
             
             # FIXME: do something with the old future
 
-        # FIXME this creation of a Future ties us to the default eventloop:
-        fut = Future()  # Don't know our loop so must take default
-
-        frame_wait[fs] = fut 
+        fut = Future(loop=loop)
+        frame_wait[fs] = fut
         yield from self.xcvr.send_frame(b)
         return fut
 
@@ -459,7 +461,7 @@ class XBRadio:
 
 
     @coroutine
-    def rx(self, timeout=1):
+    def rx(self):
         # return next available (address, data) received
         #print("rx(timeout=%d): len(received_data_packets) = %d"
         #      % (timeout, len(self.received_data_packets))) # DEBUG
