@@ -3,7 +3,7 @@ from ubinascii import hexlify, unhexlify
 from asyncio_4pyb import new_event_loop, set_event_loop
 
 from async_xbradio import Future, TimeoutError, \
-    coroutine, sleep, wait_for
+    coroutine, sleep, wait_for, GetRunningLoop
 
 from async_xbradio import XBRadio, ATStatusError
 
@@ -25,6 +25,7 @@ class XBRadio_CLI():
         self.cmd_hist = [b'']
         self.prompt = bytes(self.role + '> ', 'ASCII')
         self.tx_want_ack = True
+        self.destination = bytes(8)
 
 
     @coroutine
@@ -46,7 +47,8 @@ class XBRadio_CLI():
                     hi = min(hi+1, len(self.cmd_hist)-1)
                     console.write(b'\r' + self.prompt + buf + b'\x1b[K')
                 elif c == b'\r' or c == b'\n':
-                    self.cmd_hist.insert(0, buf)
+                    if buf != self.cmd_hist[0]:
+                        self.cmd_hist.insert(0, buf)
                     if len(self.cmd_hist) > 16:
                         self.cmd_hist.pop()
                     hi = 0
@@ -84,7 +86,7 @@ class XBRadio_CLI():
         if not line:
             return
 
-        cmd, _, rol = line.partition(b' ')
+        cmd, _, rol = line.lstrip().partition(b' ')
         cmd = str(cmd, 'ASCII')
         rol = rol.lstrip()
 
@@ -129,6 +131,8 @@ def info_cmd(cli, cmd, rol):
     yield from cli.write('addr %s' % hexlify(cli.xb.address))
     yield from showAT('DB')
     yield from showAT('PL')
+    loop = yield GetRunningLoop(None)
+    yield from cli.write(' %d queued' % len(loop.q))
     gc.collect()
     yield
     gc.collect()
@@ -138,6 +142,7 @@ def info_cmd(cli, cmd, rol):
 
 @coroutine
 def at_cmd(cli, cmd, rol):
+    print(repr(rol))
     try:
         v = yield from cli.xb.AT_cmd(rol[:2], rol[2:])
     except ATStatusError as e:
@@ -148,7 +153,7 @@ def at_cmd(cli, cmd, rol):
 @coroutine
 def echo_cmd(cli, cmd, rol):
     args = rol.split()
-    if args[0] == b'-q':
+    if args and args[0] == b'-q':
         quiet = True
         args.pop(0)
     else:
@@ -163,8 +168,10 @@ def echo_cmd(cli, cmd, rol):
 @coroutine
 def dest_cmd(cli, cmd, rol):
     # Set a default destination address
-    cli.destination = unhexlify(rol)
-    yield
+    if len(rol):
+        cli.destination = unhexlify(rol)
+    else:
+        yield from cli.writeln(hexlify(cli.destination))
 
 
 @coroutine
@@ -204,8 +211,12 @@ def ping_cmd(cli, cmd, rol):
         payload = bytes('%d: ' % (i+1), 'ASCII') + base
         status = yield from wait_for((yield from cli.xb.tx(payload, address, ack=cli.tx_want_ack)))
         yield from cli.write('-')
-        a, d = yield from cli.xb.rx()
-        yield from cli.write('|')
+        try:
+            a, d = yield from wait_for(cli.xb.rx(), 1)
+        except TimeoutError:
+            yield from cli.write('T')
+        else:
+            yield from cli.write('|')
 
     duration = elapsed_millis(t0)
     yield from cli.writeln('')
@@ -214,14 +225,27 @@ def ping_cmd(cli, cmd, rol):
 
 @coroutine
 def rx_cmd(cli, cmd, rol):
+    args = rol.split()
+
     try:
-        n = int(rol.split()[0])
+        n = int(args[0])
     except:
         n = 1
+
+    try:
+        timeout = float(str(args[1], 'ASCII'))
+    except:
+        timeout = None
+
+    print(n, timeout)
     for i in range(n):
-        a, d = yield from cli.xb.rx()
-        yield from cli.writeln('from %s got %r' % \
-                           (str(hexlify(a), 'ASCII'), d))
+        try:
+            a, d = yield from wait_for(cli.xb.rx(), timeout)
+        except TimeoutError:
+            yield from cli.writeln("timeout")
+        else:
+            yield from cli.writeln('from %s got %r' % \
+                                   (str(hexlify(a), 'ASCII'), d))
 
 @coroutine
 def tx_cmd(cli, cmd, rol):
@@ -244,6 +268,28 @@ def ack_cmd(cli, cmd, rol):
         yield from cli.writeln(cli.tx_want_ack and 'on' or 'off')
 
 @coroutine
+def eval_cmd(cli, cmd, rol):
+    d = {'cli': cli,
+         'xb': cli.xb,
+         'loop': (yield GetRunningLoop(None)) }
+    try:
+        v = eval(rol, d)
+    except Exception as e:
+        v = e
+    yield from cli.writeln(repr(v))
+
+@coroutine
+def exec_cmd(cli, cmd, rol):
+    d = {'cli': cli,
+         'xb': cli.xb,
+         'loop': (yield GetRunningLoop(None)) }
+    try:
+        v = exec(rol, d)
+    except Exception as e:
+        v = e
+    yield from cli.writeln(repr(v))
+
+@coroutine
 def quit_cmd(cli, cmd, rol):
     raise GotEOT
     yield
@@ -262,6 +308,8 @@ def inject_standard_commands(cli):
         'coro': coro_cmd,
         'dest': dest_cmd,
         'echo': echo_cmd,
+        'eval': eval_cmd,
+        'exec': exec_cmd,
         'hey': heyUsaid_cmd,
         'info': info_cmd,
         'ping': ping_cmd,
