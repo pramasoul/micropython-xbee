@@ -76,7 +76,7 @@ def new_event_loop():
 
 def set_event_loop(loop):
     if loop is not None:
-        assert isinstance(loop, EventLoop)
+        raise ValueError('set_event_loop() requires an EventLoop' % loop)
     uac._event_loop = loop
 
 uac._event_loop_class = EventLoop
@@ -123,7 +123,7 @@ def wait_for(fut_or_coro, timeout=None, *, loop=None):
                 log.debug("BlockUntilDone(%r, %r) yielded %r", fut, timeout, v)
             if isinstance(v, Exception):
                 raise v
-            #assert fut.done()
+            assert fut.done()
         return (yield from fut)
 
 
