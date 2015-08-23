@@ -465,8 +465,8 @@ class CoroTestCase(unittest.TestCase):
         yield from wait_for(sleep(0.01, loop=self.loop), 0.01, loop=self.loop)
 
         # Note there's a little grace period for the timeout:
-        yield from wait_for(sleep(0.01, loop=self.loop), 0.009, loop=self.loop)
-        yield from wait_for(sleep(0.01, loop=self.loop), 0.008, loop=self.loop)
+        #yield from wait_for(sleep(0.01, loop=self.loop), 0.009, loop=self.loop)
+        #yield from wait_for(sleep(0.01, loop=self.loop), 0.008, loop=self.loop)
         with self.assertRaises(TimeoutError):
             yield from wait_for(sleep(0.01, loop=self.loop), 0.007, loop=self.loop)
         return
@@ -478,7 +478,7 @@ class CoroTestCase(unittest.TestCase):
         with self.assertRaises(TimeoutError):
             v = yield from wait_for(Future(loop=self.loop), 0.05, loop=self.loop)
         et = pyb.elapsed_millis(t0)
-        self.assertTrue(50 <= et < 55, 'et was %rms (expected 50ms)' % et)
+        self.assertTrue(49 <= et < 55, 'et was %rms (expected 50ms)' % et)
 
 
     def testWFC(self):
