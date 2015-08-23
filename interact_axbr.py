@@ -47,7 +47,7 @@ class XBRadio_CLI():
                     hi = min(hi+1, len(self.cmd_hist)-1)
                     console.write(b'\r' + self.prompt + buf + b'\x1b[K')
                 elif c == b'\r' or c == b'\n':
-                    if buf != self.cmd_hist[0]:
+                    if buf and buf != self.cmd_hist[0]:
                         self.cmd_hist.insert(0, buf)
                     if len(self.cmd_hist) > 16:
                         self.cmd_hist.pop()
@@ -229,8 +229,7 @@ def ping_cmd(cli, cmd, rol):
         try:
             a, d = yield from wait_for(cli.xb.rx(), 1)
         except TimeoutError:
-            if not quiet:
-                yield from cli.write('T')
+            yield from cli.write('X')
         else:
             if not quiet:
                 yield from cli.write('|')
