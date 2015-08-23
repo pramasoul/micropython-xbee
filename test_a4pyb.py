@@ -342,11 +342,8 @@ class CoroTestCase(unittest.TestCase):
         del(self.i)
 
 
-    #@unittest.skip("wait_for() isn't ready")
-    #@unittest.skip("fixme")
     def test_wait_for_D(self):
-        # A coro can wait for futures
-        # that another coro periodically completes
+        # A coro can wait for futures that another coro periodically completes
         #logging.basicConfig(level=logging.DEBUG)
 
         def pq(label=''):
@@ -435,7 +432,7 @@ class CoroTestCase(unittest.TestCase):
 
 
 
-    @unittest.skip("broken test")
+    @unittest.skip("broken test, conceptually flawed")
     def testBlockUntilDone(self):
         # BlockUntilDone SysCall works as demonstrated
 
@@ -465,6 +462,7 @@ class CoroTestCase(unittest.TestCase):
         yield from wait_for(sleep(0.01, loop=self.loop), 0.01, loop=self.loop)
 
         # Note there's a little grace period for the timeout:
+        # (But not much when __debug__ is False)
         #yield from wait_for(sleep(0.01, loop=self.loop), 0.009, loop=self.loop)
         #yield from wait_for(sleep(0.01, loop=self.loop), 0.008, loop=self.loop)
         with self.assertRaises(TimeoutError):
@@ -561,6 +559,20 @@ class CoroTestCase(unittest.TestCase):
         master()
 
 
+    def testIdleAndTotalTimes(self):
+
+        @coroutine
+        def coro(spins, count, nap):
+            t = 0
+            for i in range(count):
+                for j in range(spins):
+                    t += j
+                yield from sleep(nap)
+            return t
+
+        ms, idle_us = self.loop.run_until_complete(coro(10, 100, 0.001))
+        idle_frac = idle_us / (1000*ms)
+        print("%dms, %dus idle, (%f)" % (ms, idle_us, idle_frac))
 
 
     def testYieldFromPassthru(self):

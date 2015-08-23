@@ -135,7 +135,7 @@ class EventLoop:
             yield from coro
             yield StopLoop(0)
         self.call_soon(_run_and_stop())
-        self.run_forever()
+        return self.run_forever()
 
     def close(self):
         pass

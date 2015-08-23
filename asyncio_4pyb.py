@@ -25,35 +25,51 @@ class EventLoop(uac.EventLoop):
 
     def __init__(self):
         uac.EventLoop.__init__(self)
-        self.spins = 0
+        #self.spins = 0
+        self.idle_us = 0 # idle time in microseconds
         self._led = green_led
-        self._led.on()
 
     def time(self):
         return pyb.elapsed_millis(__class__._t0) / 1000
 
     def wait(self, delay):
         t0 = pyb.millis()
-        # if delay == -1 the queue got emptied without stopping the loop
+        if delay == 0:
+            return
         if delay == -1:
+            # if delay == -1 the queue got emptied without stopping the loop
             blue_led.on()
             return
         blue_led.off()
-        if delay == 0:
-            return
         ms_delay = int(delay * 1000)
-        if ms_delay > 3:
+        if ms_delay > 10:
             gc.collect() # we have the time, so might as well clean up
+        self._led.on()
         while pyb.elapsed_millis(t0) < ms_delay:
             # If there's something useful to do we might do it here
-            self.spins += 1
-            if self.spins > 5000:
-                self.spins = 0
-                self._led.toggle()
+            #self.spins += 1
+            #if self.spins > 400:
+            #    self.spins = 0
+            #    self._led.toggle()
+
+            # Measure the idle time
+            ust = pyb.micros()
+            # Anything interesting at this point will require an interrupt
+            # If not some pin or peripheral or user timer, then it will be
+            # the 1ms system-tick interrupt, which matches our wait resolution.
+            # So we can save power by waiting for interrupt.
+            pyb.wfi()
+
+            self.idle_us += pyb.elapsed_micros(ust)
+        self._led.off()
+
 
     def run_forever(self):
+        self.idle_us = 0
+        t0_ms = pyb.millis()
         uac.EventLoop.run_forever(self)
-        self._led.off()
+        d_ms = pyb.elapsed_millis(t0_ms)
+        return d_ms, self.idle_us
 
     def unplan_call(self, h):
         # remove a call from the queue
