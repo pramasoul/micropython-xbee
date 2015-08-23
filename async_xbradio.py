@@ -317,8 +317,6 @@ class XBRadio:
         while True:
             b = yield from self.xcvr.get_frame()
             if  __debug__ and self.verbose:
-                # FIXME: better conditioning, or figure out how
-                #  to have __debug__ not True
                 log.debug("g_a_p_f(): %s", self.str_response_frame(b))
             v = self.process_frame(b)
             if v and __debug__ and self.verbose:
@@ -346,7 +344,8 @@ class XBRadio:
     def consume_transmit_status(self, b):
         #print('{c_t_x(%r)}' % b)        # DEBUG
         if (b[4] | b[5]):       # A retransmit or a status problem
-            log.info(self.str_response_frame(b))
+            if __debug__:
+                log.info(self.str_response_frame(b))
         self._frame_done(b[1], b[4:])
 
     def consume_rx(self, b):
@@ -367,7 +366,8 @@ class XBRadio:
         #print("Got AT response: %s" % cmd)
         status = b[4]
         if status is not 0:
-            log.debug(self.str_response_frame(b))
+            if __debug__:
+                log.debug(self.str_response_frame(b))
             v = ATStatusError('AT response status %d' % status) # DEBUG
         else:
             data = b[5:]
@@ -429,8 +429,9 @@ class XBRadio:
         loop = yield GetRunningLoop(None)
         frame_wait = self.frame_wait
         if frame_wait[fs]:
-            log.info("A frame still waiting in slot %d: %r" \
-                     % (fs, frame_wait[fs]))
+            if __debug__:
+                log.info("A frame still waiting in slot %d: %r" \
+                         % (fs, frame_wait[fs]))
             
             # FIXME: do something with the old future
 
