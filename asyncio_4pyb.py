@@ -76,7 +76,8 @@ def new_event_loop():
 
 def set_event_loop(loop):
     if loop is not None:
-        raise ValueError('set_event_loop() requires an EventLoop' % loop)
+        if not isinstance(loop, EventLoop):
+            raise ValueError('set_event_loop() requires an EventLoop' % loop)
     uac._event_loop = loop
 
 uac._event_loop_class = EventLoop
