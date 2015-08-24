@@ -1,14 +1,14 @@
 """Test for micropython uasyncio for pyboard"""
 
-from asyncio_4pyb import \
+from async_pyb import \
     EventLoop, new_event_loop, get_event_loop, set_event_loop, \
-    coroutine, sleep, wait_for, \
+    coroutine, async, sleep, wait_for, \
     Sleep, StopLoop, GetRunningCoro, GetRunningLoop, BlockUntilDone, \
     Future, \
     TimeoutError
 
 
-from asyncio_4pyb import async, Task # deprecated functions
+from async_pyb import async, Task # deprecated functions
 
 #from heapq import heapify, heappop
 import logging
@@ -570,9 +570,10 @@ class CoroTestCase(unittest.TestCase):
                 yield from sleep(nap)
             return t
 
-        ms, idle_us = self.loop.run_until_complete(coro(10, 100, 0.001))
-        idle_frac = idle_us / (1000*ms)
-        print("%dms, %dus idle, (%f)" % (ms, idle_us, idle_frac))
+        loop = self.loop
+        loop.run_until_complete(coro(10, 100, 0.001))
+        idle_frac = loop.idle_us / (loop.d_ms * 1000)
+        print("%dms, %dus idle, (%f)" % (loop.d_ms, loop.idle_us, idle_frac))
 
 
     def testYieldFromPassthru(self):
