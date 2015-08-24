@@ -65,9 +65,10 @@ class EventLoop:
             return
         blue_led.off()
         ms_delay = int(delay * 1000)
+        self._led.on()
         if ms_delay > 10:
             gc.collect() # we have the time, so might as well clean up
-        self._led.on()
+        ust = pyb.micros()
         while pyb.elapsed_millis(t0) < ms_delay:
             # If there's something useful to do we might do it here
             #self.spins += 1
@@ -76,14 +77,13 @@ class EventLoop:
             #    self._led.toggle()
 
             # Measure the idle time
-            ust = pyb.micros()
             # Anything interesting at this point will require an interrupt
             # If not some pin or peripheral or user timer, then it will be
             # the 1ms system-tick interrupt, which matches our wait resolution.
             # So we can save power by waiting for interrupt.
             pyb.wfi()
 
-            self.idle_us += pyb.elapsed_micros(ust)
+        self.idle_us += pyb.elapsed_micros(ust)
         self._led.off()
 
     def run_forever(self):
