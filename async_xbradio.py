@@ -173,12 +173,12 @@ class XBRHAL:
         # reset and force the XBee into SPI mode
         self.nRESET.low()
         self.DOUT.low()
-        yield from sleep(0.01) # IIRC noticably less than 10ms fails
+        yield from sleep(10) # IIRC noticably less than 10ms fails
         self.nRESET.high()
         #delay(100)              # Without nATTN watch loop, 85ms is unreliable. 100ms is ok.
         #t0 = millis()
         while self.nATTN.value():
-            #yield from sleep(0.001)
+            #yield from sleep(1)
             yield
         #print(elapsed_millis(t0))
         self.DOUT.high()
