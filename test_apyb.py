@@ -47,7 +47,7 @@ class CoroTestCase(unittest.TestCase):
     @async_test
     def testWrap(self):
         v = 1
-        yield from sleep(0.01)
+        yield from sleep(10)
         v = 2
         self.assertEqual(v, 2)
 
@@ -105,7 +105,7 @@ class CoroTestCase(unittest.TestCase):
         # If a future is not done, a wait_for() of it waits for its
         # result and returns it
         fut = Future(loop=self.loop)
-        self.loop.call_later(0.05, lambda: fut.set_result('happy'))
+        self.loop.call_later(50, lambda: fut.set_result('happy'))
         self.assertFalse(fut.done())
         v = yield from wait_for(fut)
         self.assertTrue(fut.done())
@@ -117,15 +117,15 @@ class CoroTestCase(unittest.TestCase):
     def testSleep(self):
         # sleep() works with acceptable timing
         @coroutine
-        def ts(secs):
+        def ts(ms):
             t0 = pyb.millis()
-            yield from sleep(secs, loop=self.loop)
-            et = pyb.elapsed_millis(t0) / 1000
-            self.assertTrue(secs-0.002 <= et < secs*1.01 + 0.01, \
-                            "slept for %fs (expected %f)" % (et, secs))
+            yield from sleep(ms, loop=self.loop)
+            et = pyb.elapsed_millis(t0)
+            self.assertTrue(ms <= et <= ms+2, \
+                            "slept for %ds (expected %d)" % (et, ms))
         yield from ts(0)
-        yield from ts(0.1)
-        yield from ts(0.012)
+        yield from ts(1)
+        yield from ts(12)
 
 
     @async_test
@@ -144,7 +144,7 @@ class CoroTestCase(unittest.TestCase):
         def coro(t):
             yield from sleep(t, loop=self.loop)
 
-        self.loop.run_until_complete(coro(0.01))
+        self.loop.run_until_complete(coro(10))
 
 
     def testXu(self):
@@ -157,7 +157,7 @@ class CoroTestCase(unittest.TestCase):
 
         self.counter = 0
         self.loop.call_soon(count(10))
-        self.loop.run_until_complete(sleep(0.01, loop=self.loop))
+        self.loop.run_until_complete(sleep(10, loop=self.loop))
         self.assertEqual(self.counter, 10)
 
 
@@ -167,12 +167,12 @@ class CoroTestCase(unittest.TestCase):
         def count(n):
             for i in range(n):
                 self.counter += 1
-                yield from sleep(0.001)
+                yield from sleep(1)
                 yield
 
         self.counter = 0
         self.loop.call_soon(count(10))
-        self.loop.run_until_complete(sleep(0.011, loop=self.loop))
+        self.loop.run_until_complete(sleep(11, loop=self.loop))
         self.assertEqual(self.counter, 10)
 
 
@@ -182,11 +182,11 @@ class CoroTestCase(unittest.TestCase):
         def count(n):
             for i in range(n):
                 self.counter += 1
-                yield Sleep(0.001)
+                yield Sleep(1)
 
         self.counter = 0
         self.loop.call_soon(count(10))
-        self.loop.run_until_complete(sleep(0.011, loop=self.loop))
+        self.loop.run_until_complete(sleep(11, loop=self.loop))
         self.assertEqual(self.counter, 10)
 
 
@@ -205,11 +205,11 @@ class CoroTestCase(unittest.TestCase):
         @async_test
         def master():
             self.result += 'M'
-            yield from counter('.', 3, 0.01)
-            yield counter('1', 2, 0.01)
+            yield from counter('.', 3, 10)
+            yield counter('1', 2, 10)
             self.result += 'M'
-            yield counter('2', 2, 0.01)
-            yield Sleep(0.05)
+            yield counter('2', 2, 10)
+            yield Sleep(50)
 
         master()
         self.assertEqual(self.result, 'M...1M212')
@@ -231,11 +231,11 @@ class CoroTestCase(unittest.TestCase):
         @async_test
         def master():
             self.result += 'M'
-            yield counter('.', 5, 0.01) # start new task
+            yield counter('.', 5, 10) # start new task
             self.result += 'M'
-            yield from counter('1', 4, 0.004) # subcoro "call", like wait_for
+            yield from counter('1', 4, 4) # subcoro "call", like wait_for
             self.result += 'M'
-            yield Sleep(0.07)
+            yield Sleep(70)
             self.result += 'E'
 
         master()
@@ -265,7 +265,7 @@ class CoroTestCase(unittest.TestCase):
         # A coro can return a result calculated from other coroutines' results
         @coroutine
         def fib(n):
-            yield from sleep(n/1000)
+            yield from sleep(n)
             if n <= 2:
                 return 1
             return ((yield from fib(n-1)) + (yield from fib(n-2)))
@@ -278,26 +278,46 @@ class CoroTestCase(unittest.TestCase):
         master()
 
 
+    def testStressFib(self):
+        # Stress test
+        @coroutine
+        def fib(n):
+            #yield from sleep(n)
+            if n <= 2:
+                return 1
+            return ((yield from fib(n-1)) + (yield from fib(n-2)))
+
+        @coroutine
+        def master():
+            result = yield from fib(25)
+            self.assertEqual(result, 75025)
+
+        loop = self.loop
+        loop.run_until_complete(master())
+        idle_frac = loop.idle_us / (loop.d_ms * 1000)
+        #self.assertTrue(idle_frac > 0)
+        print("%dms, %dus idle, (%f)" % (loop.d_ms, loop.idle_us, idle_frac))
+
+
+
     @async_test
     def testTimings(self):
         # Sleep timings make sense (almost)
         t0 = self.loop.time()
         t1 = self.loop.time()
-        self.assertTrue(t1-t0 <= 0.001)
+        self.assertTrue(t1-t0 <= 1)
         t0 = self.loop.time()
-        yield Sleep(0.016)
+        yield Sleep(16)
         t1 = self.loop.time()
         dt = t1 - t0
-        self.assertTrue(15/1000 < 0.015) # floating point is tricky
-        #FIXME self.assertTrue(15/1000 <= dt <= 17/1000, "dt %f (expected 0.016)" % dt)
-        self.assertTrue(14/1000 <= dt <= 0.017, "dt %f (expected 0.016)" % dt)
+        self.assertTrue(14 <= dt <= 17, "dt %f (expected 16ms)" % dt)
 
 
     def test_wait_for_B(self):
         # coro can be waited for, and result passed back
         @coroutine
         def coro1():
-            yield from wait_for(sleep(0.01, loop=self.loop), loop=self.loop)
+            yield from wait_for(sleep(10, loop=self.loop), loop=self.loop)
             return 'foo'
 
         @coroutine
@@ -308,7 +328,7 @@ class CoroTestCase(unittest.TestCase):
         @async_test
         def master():
             yield coro2()
-            yield from sleep(0.02, loop=self.loop)
+            yield from sleep(20, loop=self.loop)
 
         master()
 
@@ -319,9 +339,9 @@ class CoroTestCase(unittest.TestCase):
         @coroutine
         def coro1():
             self.i = 1
-            yield from wait_for(sleep(0.01, loop=self.loop), None, loop=self.loop)
+            yield from wait_for(sleep(10, loop=self.loop), None, loop=self.loop)
             self.i = 2
-            yield from wait_for(sleep(0.01, loop=self.loop), None, loop=self.loop)
+            yield from wait_for(sleep(10, loop=self.loop), None, loop=self.loop)
             self.i = 3
             return 'foo'
 
@@ -335,7 +355,7 @@ class CoroTestCase(unittest.TestCase):
         @async_test
         def master():
             yield coro2()
-            yield from sleep(0.03, loop=self.loop)
+            yield from sleep(30, loop=self.loop)
 
         master()
         self.assertEqual(self.i, 4)
@@ -356,7 +376,7 @@ class CoroTestCase(unittest.TestCase):
             n = 0
             while True:
                 for slot in range(len(ring)):
-                    yield from sleep(0.01, loop=self.loop)
+                    yield from sleep(10, loop=self.loop)
                     #pyb.LED(1).toggle()
                     fut = ring[slot]
                     if fut and not fut.done():
@@ -415,15 +435,15 @@ class CoroTestCase(unittest.TestCase):
         @async_test
         def master():
             self.result += 'M'
-            yield from counter('.', 3, 0.01)
-            h1 = self.loop.call_soon(counter('1', 10, 0.01))
+            yield from counter('.', 3, 10)
+            h1 = self.loop.call_soon(counter('1', 10, 10))
             self.result += 'M'
-            h2 = self.loop.call_later(0.03, counter('bad', 1, 0.01))
+            h2 = self.loop.call_later(30, counter('bad', 1, 10))
             self.assertNotEqual(h1, h2)
-            yield Sleep(0.021)
+            yield Sleep(21)
             self.assertEqual(self.loop.unplan_call(h2), 1)
             self.assertEqual(self.loop.unplan_call(h1), 0)
-            yield Sleep(0.015)
+            yield Sleep(15)
             self.result += 'M'
 
         master()
@@ -444,7 +464,7 @@ class CoroTestCase(unittest.TestCase):
         @async_test
         def master():
             fut = Future()
-            co = waitToReturn(0.01, 'cows', fut)
+            co = waitToReturn(10, 'cows', fut)
             v_co = yield co
             v_bud = yield BlockUntilDone(co, None)
             self.assertEqual(v_bud, 'cows')
@@ -455,18 +475,18 @@ class CoroTestCase(unittest.TestCase):
     @async_test
     def testWaitForCoroutine(self):
         with self.assertRaises(TimeoutError):
-            yield from wait_for(sleep(0.1, loop=self.loop), 0.001, loop=self.loop)
+            yield from wait_for(sleep(100, loop=self.loop), 1, loop=self.loop)
         with self.assertRaises(TimeoutError):
-            yield from wait_for(sleep(0.1, loop=self.loop), 0, loop=self.loop)
+            yield from wait_for(sleep(100, loop=self.loop), 0, loop=self.loop)
 
-        yield from wait_for(sleep(0.01, loop=self.loop), 0.01, loop=self.loop)
+        yield from wait_for(sleep(10, loop=self.loop), 10, loop=self.loop)
 
         # Note there's a little grace period for the timeout:
         # (But not much when __debug__ is False)
-        #yield from wait_for(sleep(0.01, loop=self.loop), 0.009, loop=self.loop)
-        #yield from wait_for(sleep(0.01, loop=self.loop), 0.008, loop=self.loop)
+        #yield from wait_for(sleep(10, loop=self.loop), 9, loop=self.loop)
+        #yield from wait_for(sleep(10, loop=self.loop), 8, loop=self.loop)
         with self.assertRaises(TimeoutError):
-            yield from wait_for(sleep(0.01, loop=self.loop), 0.007, loop=self.loop)
+            yield from wait_for(sleep(10, loop=self.loop), 7, loop=self.loop)
         return
 
 
@@ -474,7 +494,7 @@ class CoroTestCase(unittest.TestCase):
     def testWaitForFutureTimeout(self):
         t0 = pyb.millis()
         with self.assertRaises(TimeoutError):
-            v = yield from wait_for(Future(loop=self.loop), 0.05, loop=self.loop)
+            v = yield from wait_for(Future(loop=self.loop), 50, loop=self.loop)
         et = pyb.elapsed_millis(t0)
         self.assertTrue(49 <= et < 55, 'et was %rms (expected 50ms)' % et)
 
@@ -495,8 +515,8 @@ class CoroTestCase(unittest.TestCase):
         @async_test
         def master():
             fut = Future()
-            self.assertEqual((yield from x(0.01, 'happy')), 'happy')
-            self.assertEqual((yield from w(x(0.01, 'pleased'), fut)), 'pleased')
+            self.assertEqual((yield from x(10, 'happy')), 'happy')
+            self.assertEqual((yield from w(x(10, 'pleased'), fut)), 'pleased')
             self.assertEqual(fut.result(), 'pleased')
             #logging.basicConfig(level=logging.DEBUG)
             #log.debug("Now %f", self.loop.time())
@@ -504,8 +524,8 @@ class CoroTestCase(unittest.TestCase):
             # One that completes before the timeout
             t0 = pyb.millis()
             fut = Future()
-            self.loop.call_soon(w(x(0.02, 'good'), fut))
-            v = yield from wait_for(fut, 0.05)
+            self.loop.call_soon(w(x(20, 'good'), fut))
+            v = yield from wait_for(fut, 50)
             self.assertEqual(v, 'good')
             et = pyb.elapsed_millis(t0)
             self.assertTrue(20 <= et < 25, 'et was %rms (expected 20-25ms)' % et)
@@ -513,9 +533,9 @@ class CoroTestCase(unittest.TestCase):
             # One that hits the timeout
             t0 = pyb.millis()
             fut = Future()
-            self.loop.call_soon(w(x(0.02, 'fine'), fut))
+            self.loop.call_soon(w(x(20, 'fine'), fut))
             with self.assertRaises(TimeoutError):
-                v = yield from wait_for(fut, 0.01)
+                v = yield from wait_for(fut, 10)
             et = pyb.elapsed_millis(t0)            
             self.assertTrue(10 <= et < 15, 'et was %rms (expected 10-15ms)' % et)
 
@@ -537,11 +557,11 @@ class CoroTestCase(unittest.TestCase):
             fut = Future()
             me = yield GetRunningCoro(None)
             self.assertEqual(self.loop.q, []) # nobody in the queue
-            yield from sleep(0.001)
+            yield from sleep(1)
             self.assertEqual(self.loop.q, []) # nobody in the queue
-            v_coro = yield coro(me, 0.01) # starts
+            v_coro = yield coro(me, 10) # starts
             self.assertEqual(len(self.loop.q), 1) # coro is queued
-            v_sleep = yield Sleep(0.02)
+            v_sleep = yield Sleep(20)
             et = pyb.elapsed_millis(t0)            
             # We got send()'ed to when the coro finished, before the Sleep
             self.assertTrue(10 <= et < 15, 'et was %rms' % et)
@@ -553,7 +573,7 @@ class CoroTestCase(unittest.TestCase):
 
             #print("v_coro = %r, v_sleep = %r" % (v_coro, v_sleep))
             #print("Another yield returns", (yield))
-            #print("A Sleep(0.025) yield returns", (yield Sleep(0.025)))
+            #print("A Sleep(25) yield returns", (yield Sleep(25)))
             #print("Another yield returns", (yield))
             
         master()
@@ -571,8 +591,17 @@ class CoroTestCase(unittest.TestCase):
             return t
 
         loop = self.loop
-        loop.run_until_complete(coro(10, 100, 0.001))
+        loop.run_until_complete(coro(1, 10, 1))
         idle_frac = loop.idle_us / (loop.d_ms * 1000)
+        self.assertTrue(idle_frac > 0.3)
+        print("%dms, %dus idle, (%f)" % (loop.d_ms, loop.idle_us, idle_frac))
+        loop.run_until_complete(coro(1, 10, 10))
+        idle_frac = loop.idle_us / (loop.d_ms * 1000)
+        self.assertTrue(idle_frac > 0.9)
+        print("%dms, %dus idle, (%f)" % (loop.d_ms, loop.idle_us, idle_frac))
+        loop.run_until_complete(coro(1, 1, 50))
+        idle_frac = loop.idle_us / (loop.d_ms * 1000)
+        self.assertTrue(idle_frac > 0.95)
         print("%dms, %dus idle, (%f)" % (loop.d_ms, loop.idle_us, idle_frac))
 
 
@@ -619,6 +648,94 @@ class CoroTestCase(unittest.TestCase):
         self.assertEqual(delany(retRightAway(7)), 7)
         self.assertEqual(yar(delany(retRightAway(7))), ([], 7))
 
+
+    @unittest.skip("takes 20 seconds")
+    def testStressFib(self):
+        # Stress test
+        @coroutine
+        def fib(n):
+            #yield from sleep(n)
+            if n <= 2:
+                return 1
+            return ((yield from fib(n-1)) + (yield from fib(n-2)))
+
+        @coroutine
+        def master():
+            result = yield from fib(25)
+            self.assertEqual(result, 75025)
+
+        loop = self.loop
+        loop.run_until_complete(master())
+        idle_frac = loop.idle_us / (loop.d_ms * 1000)
+        #self.assertTrue(idle_frac > 0)
+        print("%dms, %dus idle, (%f)" % (loop.d_ms, loop.idle_us, idle_frac))
+
+
+    def testStressSharksAndMinnows(self):
+
+        self.minnows = set()
+        self.n_sharks = 0
+
+        @coroutine
+        def minnow(t):
+            minnows = self.minnows
+            fut = Future()
+            minnows.add(fut)
+            while True:
+                try:
+                    yield from wait_for(fut, pyb.rng() % t)
+                    return
+                except TimeoutError:
+                    if len(minnows) < 32:
+                        yield minnow(t) # Create another
+            
+        @coroutine
+        def shark(t, n):
+            self.n_sharks += 1
+            belly = n
+            while belly > 0:
+                yield from sleep(t)
+                # If well-fed, reproduce
+                if belly > 2*n:
+                    yield shark(t, n)
+                    belly -= n
+                # Try to bite a minnow
+                if len(self.minnows) > pyb.rng() & 0x1f:
+                    f = self.minnows.pop()
+                    f.set_result(None)
+                    belly += 2
+                else:
+                    belly -= 1
+            # Starved. Die.
+            self.n_sharks -= 1
+
+        @coroutine
+        def master():
+            for i in range(8):
+                yield minnow(200)
+                yield from sleep(10)
+            for i in range(3):
+                yield shark(20, 5)
+                yield from sleep(7)
+            minnows = self.minnows
+            print('')
+            while True:
+                print("\r%d minnows and %d sharks       " \
+                      % (len(minnows), self.n_sharks), end='')
+                if not (len(minnows) and self.n_sharks):
+                    break
+                yield from sleep(50)
+                yield minnow(100)
+
+        loop = self.loop
+        loop.run_until_complete(master())
+        idle_frac = loop.idle_us / (loop.d_ms * 1000)
+        #self.assertTrue(idle_frac > 0)
+        print("\n%dms, %dus idle, (%f)" % (loop.d_ms, loop.idle_us, idle_frac))
+        print("Max gc time %dus" % self.loop.max_gc_us)
+        del self.minnows
+        del self.n_sharks
+        
 
 if __name__ == '__main__':
     #logging.basicConfig(level=logging.DEBUG)
