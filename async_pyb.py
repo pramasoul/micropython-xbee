@@ -30,10 +30,11 @@ class EventLoop:
         self.q = []
         self.cnt = 0
         self.idle_us = 0 # idle time in microseconds
+        self.max_gc_us = 0
         self._led = green_led
 
     def time(self):
-        return pyb.elapsed_millis(__class__._t0) / 1000
+        return pyb.elapsed_millis(__class__._t0)
 
     def create_task(self, coro):
         # CPython 3.4.2
@@ -64,18 +65,16 @@ class EventLoop:
             blue_led.on()
             return
         blue_led.off()
-        ms_delay = int(delay * 1000)
         self._led.on()
-        if ms_delay > 10:
-            gc.collect() # we have the time, so might as well clean up
         ust = pyb.micros()
-        while pyb.elapsed_millis(t0) < ms_delay:
-            # If there's something useful to do we might do it here
-            #self.spins += 1
-            #if self.spins > 400:
-            #    self.spins = 0
-            #    self._led.toggle()
 
+        # Do possibly useful things in our idle time
+        if delay > 6:
+            gct0 = pyb.micros()
+            gc.collect() # we have the time, so might as well clean up
+            self.max_gc_us = max(pyb.elapsed_micros(gct0), self.max_gc_us)
+
+        while pyb.elapsed_millis(t0) < delay:
             # Measure the idle time
             # Anything interesting at this point will require an interrupt
             # If not some pin or peripheral or user timer, then it will be
@@ -85,6 +84,7 @@ class EventLoop:
 
         self.idle_us += pyb.elapsed_micros(ust)
         self._led.off()
+
 
     def run_forever(self):
         self.idle_us = 0
