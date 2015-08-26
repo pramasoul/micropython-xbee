@@ -11,6 +11,7 @@ from async_pyb import \
 from async_pyb import async, Task # deprecated functions
 
 #from heapq import heapify, heappop
+import gc
 import logging
 import unittest
 
@@ -42,7 +43,7 @@ class CoroTestCase(unittest.TestCase):
         
     def tearDown(self):
         self.loop.close()
-
+        gc.collect()
 
     @async_test
     def testWrap(self):
@@ -89,6 +90,7 @@ class CoroTestCase(unittest.TestCase):
         self.assertEqual(v, 'happy')
         
 
+
     @async_test
     def testwaitForFuture_A(self):
         # If a future is done, a wait_for() of it returns its result
@@ -111,6 +113,84 @@ class CoroTestCase(unittest.TestCase):
         self.assertTrue(fut.done())
         self.assertEqual(fut.result(), 'happy')
         self.assertEqual(v, 'happy')
+
+
+    def testWaitForFutureMultipleWaitersSuccess(self):
+        # Multiple coros can wait on a Future that is fulfilled
+        self.returns = []
+
+        @coroutine
+        def waiter(f, name):
+            yield from wait_for(f)
+            self.returns.append(name)
+
+        @coroutine
+        def master():
+            fut = Future()
+            yield waiter(fut, 'foo')
+            yield waiter(fut, 'bar')
+            fut.set_result(None)
+            yield from sleep(1)
+
+        loop = self.loop
+        loop.run_until_complete(master())
+        #self.assertEqual(', '.join(self.returns), 'foo, bar')
+        self.assertEqual(set(self.returns), set(['foo', 'bar']))
+
+    def testWaitForFutureMultipleWaitersTimeout(self):
+        # Multiple coros can wait on a Future that is not fulfilled,
+        # timing out
+        self.returns = []
+
+        @coroutine
+        def waiter(f, name, patience):
+            try:
+                yield from wait_for(f, patience)
+            except TimeoutError:
+                self.returns.append(name + ' Timeout @%d' % patience)
+            else:
+                self.returns.append(name + ' got it')
+
+        @coroutine
+        def master():
+            fut = Future()
+            yield waiter(fut, 'foo', 10)
+            yield waiter(fut, 'bar', 12)
+            self.assertEqual(self.returns, [])
+            yield from sleep(15)
+
+        loop = self.loop
+        loop.run_until_complete(master())
+        self.assertEqual(', '.join(self.returns), 'foo Timeout @10, bar Timeout @12')
+
+
+    def testWaitForFutureMultipleWaitersSomeTimeout(self):
+        # Multiple coros can wait on a Future, that is fulfilled after
+        # some time out and before others
+        self.returns = []
+
+        @coroutine
+        def waiter(f, name, patience):
+            try:
+                yield from wait_for(f, patience)
+            except TimeoutError:
+                self.returns.append(name + ' Timeout @%d' % patience)
+            else:
+                self.returns.append(name + ' got it')
+
+        @coroutine
+        def master():
+            fut = Future()
+            yield waiter(fut, 'foo', 10)
+            yield waiter(fut, 'bar', 20)
+            self.assertEqual(self.returns, [])
+            yield from sleep(12)
+            fut.set_result(None)
+            yield from sleep(5)
+
+        loop = self.loop
+        loop.run_until_complete(master())
+        self.assertEqual(', '.join(self.returns), 'foo Timeout @10, bar got it')
 
 
     @async_test
@@ -235,7 +315,7 @@ class CoroTestCase(unittest.TestCase):
             self.result += 'M'
             yield from counter('1', 4, 4) # subcoro "call", like wait_for
             self.result += 'M'
-            yield Sleep(70)
+            yield Sleep(75)
             self.result += 'E'
 
         master()
@@ -258,8 +338,6 @@ class CoroTestCase(unittest.TestCase):
             result = yield from factorial(5)
             self.assertEqual(result, 120)
 
-        master()
-
 
     def testFib_A(self):
         # A coro can return a result calculated from other coroutines' results
@@ -274,29 +352,6 @@ class CoroTestCase(unittest.TestCase):
         def master():
             result = yield from fib(10)
             self.assertEqual(result, 55)
-
-        master()
-
-
-    def testStressFib(self):
-        # Stress test
-        @coroutine
-        def fib(n):
-            #yield from sleep(n)
-            if n <= 2:
-                return 1
-            return ((yield from fib(n-1)) + (yield from fib(n-2)))
-
-        @coroutine
-        def master():
-            result = yield from fib(25)
-            self.assertEqual(result, 75025)
-
-        loop = self.loop
-        loop.run_until_complete(master())
-        idle_frac = loop.idle_us / (loop.d_ms * 1000)
-        #self.assertTrue(idle_frac > 0)
-        print("%dms, %dus idle, (%f)" % (loop.d_ms, loop.idle_us, idle_frac))
 
 
 
@@ -737,6 +792,10 @@ class CoroTestCase(unittest.TestCase):
         del self.n_sharks
         
 
+def main():
+    while True:
+        unittest.main()
+
 if __name__ == '__main__':
     #logging.basicConfig(level=logging.DEBUG)
-    unittest.main()
+    main()
