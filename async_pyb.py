@@ -140,8 +140,8 @@ class EventLoop:
                         elif isinstance(ret, BlockUntilDone):
                             if __debug__:
                                 log.debug('BlockUntilDone(%s)', repr(ret.args))
-                            if not hasattr(ret.args[0], 'clear_unblocking_callbacks'):
-                                raise NotImplementedError("BlockUntilDone only on a future")
+                            #if not hasattr(ret.args[0], 'clear_unblocking_callbacks'):
+                            #    raise NotImplementedError("BlockUntilDone only on a future")
                             handle = None
                             # assume a Future instance
                             assert hasattr(ret.args[0], 'clear_unblocking_callbacks')
@@ -322,10 +322,17 @@ def wait_for(fut_or_coro, timeout=None, *, loop=None):
     if isinstance(fut_or_coro, Future):
         fut = fut_or_coro       # for clairity in this code
 
-        # The slow & simple way: spin on it. Also needs timeout.
-        #while not fut.done():
-        #    yield
-        #return fut.result()
+        if True:
+            # The simple, obviously correct, and inefficient way: spin on it.
+            t0 = pyb.millis()
+            while not fut.done() and (timeout is None or pyb.elapsed_millis(t0) <= timeout):
+                    yield
+            if fut.done():
+                return fut.result()
+            else:
+                raise TimeoutError
+
+        # The above shades the below:
 
         # The clever way, with no burn while waiting
         if not fut.done():

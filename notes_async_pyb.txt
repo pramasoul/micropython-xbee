@@ -1,11 +1,9 @@
 Notes re: asyncio.core and asyncio_4pyb
 
 TODO:
-* Find a good name
-* Merge
-* Make use int ms for times instead of float
 * make mstime() that doesn't wrap
-* make stress tests
+* make more stress tests
+* make status callbacks, defaulting to LED changes
 
 asyncio.core.EventLoop:
 
