@@ -144,14 +144,24 @@ class EventLoop:
                             #    raise NotImplementedError("BlockUntilDone only on a future")
                             handle = None
                             # assume a Future instance
-                            assert hasattr(ret.args[0], 'clear_unblocking_callbacks')
+                            assert hasattr(ret.args[0], 'clear_unblocking_callback')
                             fut = ret.args[0]
+                            tl = None
                             if len(ret.args) > 1:
                                 timeout = ret.args[1]
                                 #if timeout and timeout > 0:
                                 if timeout is not None:
-                                    handle = self.call_later(timeout, self.future_timeout_closure(cb, fut))
-                            arg.add_unblocking_callback(self.future_callback_closure(cb, handle))
+                                    tl = []
+                                    fto = self.future_timeout_closure(cb, fut, tl)
+                                    #print("fto", fto, end=' ')
+                                    handle = self.call_later(timeout, fto)
+                            fcb = self.future_callback_closure(cb, handle)
+                            #print("fcb", fcb, end=' ')
+                            arg.add_unblocking_callback(fcb)
+                            #print("ubcbs", arg.ubcbs)
+                            if tl is not None:
+                                tl.append(fcb)
+                            #print("tl", tl)
                             continue
                         # end EXPERIMENTAL
 
@@ -209,16 +219,16 @@ class EventLoop:
             log.debug("future_callback_closure(%r, %r) returning %r" % (cb, handle, fcb))
         return fcb
 
-    def future_timeout_closure(self, cb, fut):
-        def ftc():
-            fut.clear_unblocking_callbacks()
+    def future_timeout_closure(self, cb, fut, tl):
+        def fto():
+            fut.clear_unblocking_callback(tl.pop())
             if __debug__:
-                log.debug("ftc(%r) clear_unblocking_callbacks" % fut)
-            self.call_soon(cb, TimeoutError()) # FIXME
+                log.debug("fto(%r) clear_unblocking_callbacks" % fut)
+            self.call_soon(cb, TimeoutError()) # FIXME?
             #FIXME: ?? raise TimeoutError
         if __debug__:
-            log.debug("future_timeout_closure(%r) returning %r" % (fut, ftc))
-        return ftc
+            log.debug("future_timeout_closure(%r) returning %r" % (fut, fto))
+        return fto
 
 class SysCall:
 
@@ -322,7 +332,8 @@ def wait_for(fut_or_coro, timeout=None, *, loop=None):
     if isinstance(fut_or_coro, Future):
         fut = fut_or_coro       # for clairity in this code
 
-        if True:
+        if False:
+            # Kept there for testing and debugging purposes, this is:
             # The simple, obviously correct, and inefficient way: spin on it.
             t0 = pyb.millis()
             while not fut.done() and (timeout is None or pyb.elapsed_millis(t0) <= timeout):
@@ -332,8 +343,7 @@ def wait_for(fut_or_coro, timeout=None, *, loop=None):
             else:
                 raise TimeoutError
 
-        # The above shades the below:
-
+        # Else
         # The clever way, with no burn while waiting
         if not fut.done():
             v = yield BlockUntilDone(fut, timeout)
@@ -390,8 +400,8 @@ class Future:
             # FIXME: is this correct?
             self.loop.call_soon(fn, self)
 
-    def clear_unblocking_callbacks(self):
-        self.ubcbs = []
+    def clear_unblocking_callback(self, fun):
+        self.ubcbs.remove(fun)
 
     def done(self):
         return self.res is not _sentinel
