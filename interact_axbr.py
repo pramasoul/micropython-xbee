@@ -1,6 +1,6 @@
 from ubinascii import hexlify, unhexlify
 
-from asyncio_4pyb import new_event_loop, set_event_loop
+from async_pyb import new_event_loop, set_event_loop
 
 from async_xbradio import Future, TimeoutError, \
     coroutine, sleep, wait_for, GetRunningLoop
@@ -9,6 +9,7 @@ from async_xbradio import XBRadio, ATStatusError
 
 import gc
 
+import pyb
 from pyb import USB_VCP, SPI, Pin, millis, elapsed_millis
 
 
@@ -58,7 +59,7 @@ class XBRadio_CLI():
                     buf += c
                     console.write(c)
             else:
-                yield from sleep(0.05)
+                yield from sleep(50)
 
     @coroutine
     def write(self, buf):
@@ -287,7 +288,8 @@ def ack_cmd(cli, cmd, rol):
 def eval_cmd(cli, cmd, rol):
     d = {'cli': cli,
          'xb': cli.xb,
-         'loop': (yield GetRunningLoop(None)) }
+         'loop': (yield GetRunningLoop(None)),
+         'pyb': pyb }
     try:
         v = eval(rol, d)
     except Exception as e:
@@ -298,7 +300,8 @@ def eval_cmd(cli, cmd, rol):
 def exec_cmd(cli, cmd, rol):
     d = {'cli': cli,
          'xb': cli.xb,
-         'loop': (yield GetRunningLoop(None)) }
+         'loop': (yield GetRunningLoop(None)),
+         'pyb': pyb }
     try:
         v = exec(rol, d)
     except Exception as e:
