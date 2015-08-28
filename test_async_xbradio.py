@@ -5,7 +5,7 @@ import unittest
 
 from ubinascii import hexlify, unhexlify
 
-from asyncio_4pyb import new_event_loop, set_event_loop, get_event_loop, \
+from async_pyb import new_event_loop, set_event_loop, get_event_loop, \
     EventLoop
 
 from async_xbradio import Future, TimeoutError, \
@@ -65,7 +65,7 @@ class CoroTestCase(unittest.TestCase):
     def testWrap(self):
         # Tests that the async_test wrapper works
         v = 1
-        yield from sleep(0.1)
+        yield from sleep(100)
         v = 2
         self.assertEqual(v, 2)
 
@@ -96,7 +96,7 @@ class RadioTestCase(unittest.TestCase):
     @async_test
     def testSleep(self):
         # sleep() does not freeze
-        yield from sleep(0.01)
+        yield from sleep(10)
 
     @async_test
     def testStartRadio(self):
@@ -150,10 +150,10 @@ class RadioTestCase(unittest.TestCase):
         yield from xb.start()
         self.assertEqual(xb.rx_available(), 0)
         yield from xb.tx('foo', xb.address)
-        yield from sleep(0.01)
+        yield from sleep(10)
         self.assertEqual(xb.rx_available(), 1)
         yield from xb.tx('bar', xb.address)
-        yield from sleep(0.1)
+        yield from sleep(100)
         self.assertEqual(xb.rx_available(), 2)
         a, d = yield from xb.rx()
         self.assertEqual(a, xb.address)
@@ -170,8 +170,8 @@ class RadioTestCase(unittest.TestCase):
         xb = self.xb
         yield from xb.start()
         self.assertEqual(xb.rx_available(), 0)
-        yield from wait_for((yield from xb.tx('foo', xb.address)), 0.1)
-        yield from wait_for((yield from xb.tx('bar', xb.address)), 0.1)
+        yield from wait_for((yield from xb.tx('foo', xb.address)), 100)
+        yield from wait_for((yield from xb.tx('bar', xb.address)), 100)
         a, d = yield from xb.rx()
         self.assertEqual(a, xb.address)
         self.assertEqual(d, b'foo')
@@ -210,9 +210,9 @@ class RadioTestCase(unittest.TestCase):
         v = yield from wait_for((yield from xb.tx('bar2', 'thisisanaddress!')), 4)
         self.assertEqual(v, v1)
 
-        # 0.1 seconds is not long enough, and raises TimeoutError
+        # 100 seconds is not long enough, and raises TimeoutError
         with self.assertRaises(TimeoutError):
-            v = yield from wait_for((yield from xb.tx('bar3', 'thisisanaddress!')), 0.1)
+            v = yield from wait_for((yield from xb.tx('bar3', 'thisisanaddress!')), 100)
 
         t_end = self.loop.time()
         print("took", t_end - t_start, "seconds")
@@ -222,12 +222,12 @@ class RadioTestCase(unittest.TestCase):
         with self.assertRaises(TimeoutError):
             f = yield from xb.tx('bar3', 'thisisanaddress!')
             self.assertIsInstance(f, Future)
-            v = yield from wait_for(f, 0.1)
+            v = yield from wait_for(f, 100)
             print("3:", v)
 
         t0 = millis()
         with self.assertRaises(TimeoutError):
-            v = yield from wait_for(xb.tx('bar4', 'thisisanaddress!'), 0.1)
+            v = yield from wait_for(xb.tx('bar4', 'thisisanaddress!'), 100)
             print("4:", v)
 
 
@@ -294,7 +294,7 @@ class RadioTestCase(unittest.TestCase):
 
         @coroutine
         def getv():
-            yield from sleep(0.01)
+            yield from sleep(10)
             t = yield from self.xb.xcvr.get_frame()
             self.assertEqual(t[-5:], b'\xff\xfe\x00\x00\x00') # The TX status
             self.v = yield from self.xb.xcvr.get_frame()     # The received packet
@@ -304,7 +304,7 @@ class RadioTestCase(unittest.TestCase):
             xb = self.xb
             self.assertEqual(xb.rx_available(), 0)
             yield from xb.tx('foo', xb.address)
-            yield from sleep(0.02)
+            yield from sleep(20)
             self.assertEqual(xb.rx_available(), 1)
             self.assertEqual(self.v[-3:], b'foo')
 
@@ -328,7 +328,7 @@ class RadioTestCase(unittest.TestCase):
     @async_test
     def testBuzz(self):
         n = 1000
-        delay = 0.01
+        delay = 10
         tx_want_ack = True
 
         xb = self.xb

@@ -1,9 +1,7 @@
 """asyncio-based XBRadio"""
 
-from asyncio_4pyb import Future, TimeoutError, \
-    coroutine, sleep, wait_for
-
-from asyncio_4pyb import GetRunningLoop
+from async_pyb import Future, TimeoutError, \
+    coroutine, sleep, wait_for, GetRunningLoop
 
 import logging
 
