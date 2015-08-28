@@ -31,6 +31,7 @@ class EventLoop:
         self.cnt = 0
         self.idle_us = 0 # idle time in microseconds
         self.max_gc_us = 0
+        self.max_qlen = 0
         self._led = green_led
 
     def time(self):
@@ -54,6 +55,7 @@ class EventLoop:
             log.debug("Scheduling %s", (time, self.cnt, callback, args))
         self.cnt += 1
         heapq.heappush(self.q, (time, self.cnt, callback, args))
+        self.max_qlen = max(self.max_qlen, len(self.q))
         return self.cnt
 
     def wait(self, delay):
