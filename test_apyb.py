@@ -248,11 +248,10 @@ class CoroTestCase(unittest.TestCase):
             for i in range(n):
                 self.counter += 1
                 yield from sleep(1)
-                yield
 
         self.counter = 0
         self.loop.call_soon(count(10))
-        self.loop.run_until_complete(sleep(11, loop=self.loop))
+        self.loop.run_until_complete(sleep(12, loop=self.loop))
         self.assertEqual(self.counter, 10)
 
 
@@ -704,26 +703,45 @@ class CoroTestCase(unittest.TestCase):
         self.assertEqual(yar(delany(retRightAway(7))), ([], 7))
 
 
-    @unittest.skip("takes 20 seconds")
+    #@unittest.skip("takes TBD seconds")
     def testStressFib(self):
         # Stress test
         @coroutine
-        def fib(n):
-            #yield from sleep(n)
+        def fib(n, fut):
+            yield from sleep(pyb.rng() % n)
             if n <= 2:
-                return 1
-            return ((yield from fib(n-1)) + (yield from fib(n-2)))
+                fut.set_result(1)
+            else:
+                f1 = Future()
+                f2 = Future()
+                yield fib(n-1, f1)
+                yield fib(n-2, f2)
+                v1 = yield from wait_for(f1)
+                v2 = yield from wait_for(f2)
+                fut.set_result(v1 + v2)
+                return(v1+v2)
+
+        @coroutine
+        def monitor():
+            while True:
+                print('\r%3d' % len(self.loop.q), end='')
+                yield from sleep(50)
 
         @coroutine
         def master():
-            result = yield from fib(25)
-            self.assertEqual(result, 75025)
+            #yield monitor()
+            fut = Future()
+            result = yield from fib(10, fut)
+            yield from wait_for(fut)
+            self.assertEqual(result, fut.result())
+            self.assertEqual(result, 55)
 
         loop = self.loop
         loop.run_until_complete(master())
         idle_frac = loop.idle_us / (loop.d_ms * 1000)
         #self.assertTrue(idle_frac > 0)
-        print("%dms, %dus idle, (%f)" % (loop.d_ms, loop.idle_us, idle_frac))
+        print("%dms, %dus idle, (%f), max_qlen=%d" % \
+              (loop.d_ms, loop.idle_us, idle_frac, loop.max_qlen))
 
 
     def testStressSharksAndMinnows(self):
@@ -792,9 +810,28 @@ class CoroTestCase(unittest.TestCase):
         del self.n_sharks
         
 
+    def testMaxFutures(self):
+        fl = []
+        for i in range(1000):
+            try:
+                n = i
+                fl.append(Future())
+            except MemoryError as e:
+                pyb.info()
+                del(fl)
+                print("Got %d empty futures before running out of memory" % n)
+                return
+                
+
 def main():
     while True:
-        unittest.main()
+        try:
+            unittest.main()
+        except MemoryError as e:
+            #print("MemoryError:", e)
+            pyb.info()
+            raise
+
 
 if __name__ == '__main__':
     #logging.basicConfig(level=logging.DEBUG)
